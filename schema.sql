@@ -39,11 +39,14 @@ CREATE TABLE models (
     name VARCHAR(255) NOT NULL,
     nickname VARCHAR(255),
     context_window INTEGER NOT NULL,
+    context_window_override INTEGER, -- User-defined context window override
     is_favorite BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_model_per_provider UNIQUE (provider_id, name)
 );
+
+COMMENT ON COLUMN models.context_window_override IS 'User-defined context window override, takes precedence over default context_window when set';
 
 CREATE TRIGGER trg_models_updated_at BEFORE UPDATE ON models
     FOR EACH ROW EXECUTE FUNCTION touch_updated_at();

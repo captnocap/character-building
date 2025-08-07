@@ -35,11 +35,21 @@ router.post('/', asyncHandler(async (req, res) => {
 router.get('/:identifier', asyncHandler(async (req, res) => {
   const { identifier } = req.params;
   
-  // Try to find by slug first, then by UUID
-  const result = await pool.query(
-    'SELECT * FROM providers WHERE slug = $1 OR id = $1',
-    [identifier]
-  );
+  // Try to find by slug first, then by UUID if it looks like a UUID
+  let result;
+  if (identifier.includes('-') && identifier.length === 36) {
+    // Looks like a UUID, try both slug and UUID
+    result = await pool.query(
+      'SELECT * FROM providers WHERE slug = $1 OR id = $1::uuid',
+      [identifier]
+    );
+  } else {
+    // Not a UUID format, only try slug
+    result = await pool.query(
+      'SELECT * FROM providers WHERE slug = $1',
+      [identifier]
+    );
+  }
   
   if (result.rows.length === 0) {
     return res.status(404).json({ error: 'Provider not found' });
@@ -53,10 +63,20 @@ router.put('/:identifier', asyncHandler(async (req, res) => {
   const { identifier } = req.params;
   const { name, type, base_url, api_key_ref, slug } = req.body;
   
-  const result = await pool.query(
-    'UPDATE providers SET name = $1, slug = $2, type = $3, base_url = $4, api_key_ref = $5 WHERE slug = $6 OR id = $6 RETURNING *',
-    [name, slug, type, base_url, api_key_ref, identifier]
-  );
+  let result;
+  if (identifier.includes('-') && identifier.length === 36) {
+    // Looks like a UUID, try both slug and UUID
+    result = await pool.query(
+      'UPDATE providers SET name = $1, slug = $2, type = $3, base_url = $4, api_key_ref = $5 WHERE slug = $6 OR id = $6::uuid RETURNING *',
+      [name, slug, type, base_url, api_key_ref, identifier]
+    );
+  } else {
+    // Not a UUID format, only try slug
+    result = await pool.query(
+      'UPDATE providers SET name = $1, slug = $2, type = $3, base_url = $4, api_key_ref = $5 WHERE slug = $6 RETURNING *',
+      [name, slug, type, base_url, api_key_ref, identifier]
+    );
+  }
   
   if (result.rows.length === 0) {
     return res.status(404).json({ error: 'Provider not found' });
@@ -67,10 +87,22 @@ router.put('/:identifier', asyncHandler(async (req, res) => {
 
 // DELETE /api/providers/:identifier - Delete provider by ID or slug
 router.delete('/:identifier', asyncHandler(async (req, res) => {
-  const result = await pool.query(
-    'DELETE FROM providers WHERE slug = $1 OR id = $1 RETURNING id, name, slug',
-    [req.params.identifier]
-  );
+  const { identifier } = req.params;
+  
+  let result;
+  if (identifier.includes('-') && identifier.length === 36) {
+    // Looks like a UUID, try both slug and UUID
+    result = await pool.query(
+      'DELETE FROM providers WHERE slug = $1 OR id = $1::uuid RETURNING id, name, slug',
+      [identifier]
+    );
+  } else {
+    // Not a UUID format, only try slug
+    result = await pool.query(
+      'DELETE FROM providers WHERE slug = $1 RETURNING id, name, slug',
+      [identifier]
+    );
+  }
   
   if (result.rows.length === 0) {
     return res.status(404).json({ error: 'Provider not found' });

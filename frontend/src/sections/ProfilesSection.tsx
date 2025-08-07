@@ -15,9 +15,11 @@ export default function ProfilesSection() {
 
   const fetchProfiles = async () => {
     try {
-      const response = await fetch('/api/profiles');
+      const response = await fetch('/api/user-profiles');
       const data = await response.json();
-      setProfiles(data);
+      // Handle both array response and object with profiles array
+      const profilesArray = Array.isArray(data) ? data : (data.profiles || []);
+      setProfiles(profilesArray);
     } catch (error) {
       console.error('Failed to fetch profiles:', error);
     } finally {
@@ -35,11 +37,11 @@ export default function ProfilesSection() {
     try {
       const newProfile = {
         name: 'New Profile',
-        description: '',
+        description: 'A new user profile', // Required by validation
         format_type: 'plain' as const
       };
       
-      const response = await fetch('/api/profiles', {
+      const response = await fetch('/api/user-profiles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newProfile)
@@ -49,6 +51,8 @@ export default function ProfilesSection() {
         const created = await response.json();
         setProfiles(prev => [...prev, created]);
         selectProfile(created.id);
+      } else {
+        console.error('Failed to create profile:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Failed to create profile:', error);
@@ -59,7 +63,7 @@ export default function ProfilesSection() {
     if (!editingProfile) return;
     
     try {
-      const response = await fetch(`/api/profiles/${editingProfile.id}`, {
+      const response = await fetch(`/api/user-profiles/${editingProfile.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -80,7 +84,7 @@ export default function ProfilesSection() {
     if (!window.confirm('Are you sure you want to delete this profile?')) return;
     
     try {
-      await fetch(`/api/profiles/${profileId}`, { method: 'DELETE' });
+      await fetch(`/api/user-profiles/${profileId}`, { method: 'DELETE' });
       setProfiles(prev => prev.filter(p => p.id !== profileId));
       if (state.selection.profileId === profileId) {
         dispatch({ type: 'SET_SELECTION', payload: { key: 'profileId', value: undefined } });

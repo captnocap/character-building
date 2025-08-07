@@ -58,11 +58,12 @@ class ApiClient {
   }
 
   // Model endpoints
-  getModels(cursor?: string, providerId?: string, fav?: boolean) {
+  getModels(cursor?: string, providerId?: string, providerSlug?: string, fav?: boolean) {
     const params = new URLSearchParams();
     if (cursor) params.set('cursor', cursor);
-    if (providerId) params.set('providerId', providerId);
-    if (fav !== undefined) params.set('fav', fav.toString());
+    if (providerId) params.set('provider_id', providerId);
+    if (providerSlug) params.set('provider_slug', providerSlug);
+    if (fav !== undefined) params.set('is_favorite', fav.toString());
     const query = params.toString() ? `?${params}` : '';
     return this.request<any>(`/api/models${query}`);
   }

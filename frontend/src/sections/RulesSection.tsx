@@ -21,9 +21,13 @@ export default function RulesSection() {
     try {
       const response = await fetch('/api/rules');
       const data = await response.json();
-      setRules(data);
+      // Handle both array response and object with rules array
+      const rulesArray = Array.isArray(data) ? data : (data.rules || []);
+      setRules(rulesArray);
     } catch (error) {
       console.error('Failed to fetch rules:', error);
+      // For now, set empty array if rules endpoint doesn't work
+      setRules([]);
     } finally {
       setLoading(false);
     }

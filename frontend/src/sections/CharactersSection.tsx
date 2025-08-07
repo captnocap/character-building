@@ -18,7 +18,9 @@ export default function CharactersSection() {
     try {
       const response = await fetch('/api/characters');
       const data = await response.json();
-      setCharacters(data);
+      // Handle both array response and object with characters array
+      const charactersArray = Array.isArray(data) ? data : (data.characters || []);
+      setCharacters(charactersArray);
     } catch (error) {
       console.error('Failed to fetch characters:', error);
     } finally {
@@ -36,7 +38,7 @@ export default function CharactersSection() {
     try {
       const newCharacter = {
         name: 'New Character',
-        description: '',
+        description: 'A new character', // Required by validation
         format_type: 'plain' as const
       };
       
@@ -50,6 +52,8 @@ export default function CharactersSection() {
         const created = await response.json();
         setCharacters(prev => [...prev, created]);
         selectCharacter(created.id);
+      } else {
+        console.error('Failed to create character:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Failed to create character:', error);

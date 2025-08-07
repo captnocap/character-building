@@ -11,6 +11,7 @@ import PresetsSection from '../sections/PresetsSection';
 import TemplatesSection from '../sections/TemplatesSection';
 import RulesSection from '../sections/RulesSection';
 import ForgeSection from '../sections/ForgeSection';
+import ConversationSection from '../sections/ConversationSection';
 
 export default function Layout() {
   return (
@@ -30,6 +31,7 @@ export default function Layout() {
           <Route path="/templates" element={<TemplatesSection />} />
           <Route path="/rules" element={<RulesSection />} />
           <Route path="/forge" element={<ForgeSection />} />
+          <Route path="/conversation" element={<ConversationSection />} />
         </Routes>
       </main>
       

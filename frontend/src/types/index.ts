@@ -1,6 +1,7 @@
 export interface Provider {
   id: string;
   name: string;
+  slug: string;
   type: 'openai' | 'anthropic' | 'custom_openai' | 'local';
   base_url: string;
   api_key_ref: string;
@@ -11,7 +12,9 @@ export interface Model {
   name: string;
   nickname?: string;
   provider_name: string;
+  provider_slug: string;
   context_window: number;
+  context_window_override?: number;
   is_favorite: boolean;
 }
 

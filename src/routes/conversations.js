@@ -60,6 +60,124 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
+// GET /api/conversations/templates - Get conversation templates
+router.get('/templates', asyncHandler(async (req, res) => {
+  const result = await pool.query(`
+    SELECT ct.*, 
+           up.name as user_profile_name,
+           c.name as character_name,
+           m.name as model_name,
+           ip.name as preset_name
+    FROM conversation_templates ct
+    LEFT JOIN user_profiles up ON ct.user_profile_id = up.id
+    LEFT JOIN characters c ON ct.character_id = c.id
+    LEFT JOIN models m ON ct.model_id = m.id
+    LEFT JOIN inference_presets ip ON ct.inference_preset_id = ip.id
+    ORDER BY ct.created_at DESC
+  `);
+  
+  res.json(result.rows);
+}));
+
+// POST /api/conversations/templates - Create new conversation template
+router.post('/templates', asyncHandler(async (req, res) => {
+  const {
+    name,
+    model_id,
+    user_profile_id,
+    character_id,
+    prompt_wrapper_id,
+    response_tone_id,
+    response_setting_id,
+    inference_preset_id
+  } = req.body;
+  
+  if (!name) {
+    return res.status(400).json({ error: 'Template name is required' });
+  }
+  
+  const result = await pool.query(
+    `INSERT INTO conversation_templates (
+      name, model_id, user_profile_id, character_id, prompt_wrapper_id,
+      response_tone_id, response_setting_id, inference_preset_id
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    RETURNING *`,
+    [name, model_id, user_profile_id, character_id, prompt_wrapper_id, 
+     response_tone_id, response_setting_id, inference_preset_id]
+  );
+  
+  res.status(201).json(result.rows[0]);
+}));
+
+// PUT /api/conversations/templates/:id - Update conversation template
+router.put('/templates/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const {
+    name,
+    model_id,
+    user_profile_id,
+    character_id,
+    prompt_wrapper_id,
+    response_tone_id,
+    response_setting_id,
+    inference_preset_id
+  } = req.body;
+  
+  const fields = [
+    'name', 'model_id', 'user_profile_id', 'character_id', 'prompt_wrapper_id',
+    'response_tone_id', 'response_setting_id', 'inference_preset_id'
+  ];
+  
+  const updates = [];
+  const values = [];
+  let paramCount = 1;
+  
+  for (const field of fields) {
+    if (req.body[field] !== undefined) {
+      updates.push(`${field} = $${paramCount++}`);
+      values.push(req.body[field]);
+    }
+  }
+  
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'No fields to update' });
+  }
+  
+  values.push(id);
+  const result = await pool.query(
+    `UPDATE conversation_templates 
+     SET ${updates.join(', ')}
+     WHERE id = $${paramCount}
+     RETURNING *`,
+    values
+  );
+  
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'Template not found' });
+  }
+  
+  res.json(result.rows[0]);
+}));
+
+// DELETE /api/conversations/templates/:id - Delete conversation template
+router.delete('/templates/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const result = await pool.query(
+    'DELETE FROM conversation_templates WHERE id = $1 RETURNING id, name',
+    [id]
+  );
+  
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'Template not found' });
+  }
+  
+  res.json({ 
+    message: 'Template deleted successfully',
+    deleted: result.rows[0]
+  });
+}));
+
 // GET /api/conversations/:id - Get single conversation with messages
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -406,5 +524,274 @@ router.post('/:id/fork', asyncHandler(async (req, res) => {
   
   res.status(201).json(result);
 }));
+
+// POST /api/conversations/chat - Handle real-time chat with AI
+router.post('/chat', asyncHandler(async (req, res) => {
+  const { message, config, messageHistory = [] } = req.body;
+  
+  if (!message || !config.modelId) {
+    return res.status(400).json({ error: 'Message and modelId are required' });
+  }
+
+  try {
+    // Get model and provider information
+    const modelResult = await pool.query(
+      `SELECT m.*, p.name as provider_name, p.slug as provider_slug, p.type as provider_type, p.base_url, p.api_key_ref 
+       FROM models m 
+       JOIN providers p ON m.provider_id = p.id 
+       WHERE m.id = $1`,
+      [config.modelId]
+    );
+
+    if (modelResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Model not found' });
+    }
+
+    const model = modelResult.rows[0];
+
+    // Build context if requested
+    let contextInfo = null;
+    let systemPrompt = '';
+    
+    if (config.useContext) {
+      // Get character context
+      if (config.characterId) {
+        const characterResult = await pool.query(
+          'SELECT name, description, format_type, mood_variants, internal_state FROM characters WHERE id = $1',
+          [config.characterId]
+        );
+        if (characterResult.rows.length > 0) {
+          const character = characterResult.rows[0];
+          systemPrompt += `You are ${character.name}. ${character.description}\n\n`;
+        }
+      }
+
+      // Get user profile context
+      if (config.profileId) {
+        const profileResult = await pool.query(
+          'SELECT name, description FROM user_profiles WHERE id = $1',
+          [config.profileId]
+        );
+        if (profileResult.rows.length > 0) {
+          const profile = profileResult.rows[0];
+          systemPrompt += `User Profile: ${profile.name}\n${profile.description}\n\n`;
+        }
+      }
+
+      contextInfo = {
+        compiledPrompt: systemPrompt,
+        tokens: { used: systemPrompt.length / 4, max: model.context_window },
+        rules: []
+      };
+    }
+
+    // Get inference preset
+    let inferenceSettings = {
+      temperature: 0.7,
+      max_tokens: 1000,
+      top_p: 0.9
+    };
+
+    if (config.presetId) {
+      const presetResult = await pool.query(
+        'SELECT temperature, max_tokens, top_p, top_k, frequency_penalty, presence_penalty FROM inference_presets WHERE id = $1',
+        [config.presetId]
+      );
+      if (presetResult.rows.length > 0) {
+        const preset = presetResult.rows[0];
+        inferenceSettings = {
+          temperature: preset.temperature || 0.7,
+          max_tokens: preset.max_tokens || 1000,
+          top_p: preset.top_p || 0.9,
+          top_k: preset.top_k,
+          frequency_penalty: preset.frequency_penalty,
+          presence_penalty: preset.presence_penalty
+        };
+      }
+    }
+
+    // Prepare messages for AI API
+    const messages = [];
+    
+    if (systemPrompt) {
+      messages.push({
+        role: 'system',
+        content: systemPrompt
+      });
+    }
+
+    // Add message history
+    messageHistory.forEach(msg => {
+      messages.push({
+        role: msg.role,
+        content: msg.content
+      });
+    });
+
+    // Add current user message
+    messages.push({
+      role: 'user',
+      content: message
+    });
+
+    // Make actual AI API call to the model's provider
+    const aiResponse = await callAiProvider(model, messages, inferenceSettings);
+
+    // Store messages in database for history (optional)
+    // You could create a temporary conversation or just keep in memory
+
+    res.json({
+      response: aiResponse,
+      contextInfo: contextInfo,
+      model: {
+        name: model.name,
+        provider: model.provider_name
+      }
+    });
+
+  } catch (error) {
+    console.error('Chat error:', error.message);
+    console.error('Stack:', error.stack);
+    res.status(500).json({ error: 'Failed to process chat message', details: error.message });
+  }
+}));
+
+// AI Provider API call function
+async function callAiProvider(model, messages, inferenceSettings) {
+  const { provider_slug, provider_name, base_url, name: modelName } = model;
+  
+  try {
+    let response;
+    
+    switch (provider_slug) {
+      case 'openai':
+        response = await callOpenAI(base_url, modelName, messages, inferenceSettings);
+        break;
+      case 'anthropic':
+        response = await callAnthropic(base_url, modelName, messages, inferenceSettings);
+        break;
+      case 'lmstudio':
+        response = await callLMStudio(base_url, modelName, messages, inferenceSettings);
+        break;
+      case 'nanogpt':
+        response = await callNanoGPT(base_url, modelName, messages, inferenceSettings);
+        break;
+      default:
+        throw new Error(`Unsupported provider: ${provider_slug}`);
+    }
+    
+    return response;
+  } catch (error) {
+    console.error(`Error calling ${provider_name}:`, error);
+    throw new Error(`Failed to get response from ${provider_name}: ${error.message}`);
+  }
+}
+
+// OpenAI API call
+async function callOpenAI(baseUrl, model, messages, settings) {
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+      temperature: settings.temperature,
+      max_tokens: settings.max_tokens,
+      top_p: settings.top_p,
+      frequency_penalty: settings.frequency_penalty,
+      presence_penalty: settings.presence_penalty
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`OpenAI API error: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
+
+// Anthropic API call
+async function callAnthropic(baseUrl, model, messages, settings) {
+  // Convert messages format for Anthropic
+  const systemMessage = messages.find(m => m.role === 'system');
+  const conversationMessages = messages.filter(m => m.role !== 'system');
+  
+  const response = await fetch(`${baseUrl}/v1/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: model,
+      max_tokens: settings.max_tokens,
+      temperature: settings.temperature,
+      system: systemMessage?.content,
+      messages: conversationMessages
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Anthropic API error: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  return data.content[0].text;
+}
+
+// LM Studio API call (OpenAI-compatible)
+async function callLMStudio(baseUrl, model, messages, settings) {
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+      temperature: settings.temperature,
+      max_tokens: settings.max_tokens,
+      top_p: settings.top_p
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`LM Studio API error: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
+
+// Nano GPT API call
+async function callNanoGPT(baseUrl, model, messages, settings) {
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.NANOGPT_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: messages,
+      temperature: settings.temperature,
+      max_tokens: settings.max_tokens,
+      top_p: settings.top_p
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Nano GPT API error: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  return data.response || data.message || data.content;
+}
+
 
 export default router;

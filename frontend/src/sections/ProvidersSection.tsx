@@ -80,7 +80,9 @@ export default function ProvidersSection() {
                     </div>
                     <div className="flex-1">
                       <div className="font-medium text-gray-900">{provider.name}</div>
-                      <div className="text-sm text-gray-500">{provider.type}</div>
+                      <div className="text-sm text-gray-500">
+                        {provider.type} • {provider.slug}
+                      </div>
                     </div>
                     <div className="text-xs text-gray-400 truncate max-w-24">
                       {provider.base_url}
@@ -107,6 +109,16 @@ export default function ProvidersSection() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   readOnly
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
+                <input
+                  type="text"
+                  value={selectedProvider.slug}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
+                  readOnly
+                />
+                <p className="text-xs text-gray-500 mt-1">Use this readable identifier instead of UUID</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>

@@ -37,6 +37,24 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(result.rows);
 }));
 
+// GET /api/models/:id - Get single model
+router.get('/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const result = await pool.query(`
+    SELECT m.*, p.name as provider_name, p.slug as provider_slug, p.type as provider_type
+    FROM models m
+    JOIN providers p ON m.provider_id = p.id
+    WHERE m.id = $1
+  `, [id]);
+  
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'Model not found' });
+  }
+  
+  res.json(result.rows[0]);
+}));
+
 // POST /api/models - Create model
 router.post('/', asyncHandler(async (req, res) => {
   const { provider_id, name, nickname, context_window, is_favorite = false } = req.body;
@@ -52,6 +70,46 @@ router.post('/', asyncHandler(async (req, res) => {
   );
   
   res.status(201).json(result.rows[0]);
+}));
+
+// PUT /api/models/:id - Update model
+router.put('/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { nickname, context_window_override, is_favorite } = req.body;
+  
+  // Build dynamic update query
+  const updates = [];
+  const values = [];
+  
+  if (nickname !== undefined) {
+    values.push(nickname);
+    updates.push(`nickname = $${values.length}`);
+  }
+  
+  if (context_window_override !== undefined) {
+    values.push(context_window_override);
+    updates.push(`context_window_override = $${values.length}`);
+  }
+  
+  if (is_favorite !== undefined) {
+    values.push(is_favorite);
+    updates.push(`is_favorite = $${values.length}`);
+  }
+  
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'No fields to update' });
+  }
+  
+  values.push(id);
+  const query = `UPDATE models SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING *`;
+  
+  const result = await pool.query(query, values);
+  
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'Model not found' });
+  }
+  
+  res.json(result.rows[0]);
 }));
 
 // PUT /api/models/:id/favorite - Toggle favorite

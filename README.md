@@ -1,566 +1,246 @@
-# Character & Conversation Management API
+Ran tool
+Read file: /home/siah/builder/package.json
+Read file: /home/siah/builder/frontend/package.json
+Read file: /home/siah/builder/README.md
+Read file: /home/siah/builder/DATABASE_SETUP.md
+Read file: /home/siah/builder/prisma/schema.prisma
+Read file: /home/siah/builder/src/server.js
+Read file: /home/siah/builder/frontend/src/App.tsx
+Read file: /home/siah/builder/start.sh
+Read file: /home/siah/builder/frontend/src/components/Layout.tsx
+Read file: /home/siah/builder/frontend/src/components/LeftNav.tsx
+Read file: /home/siah/builder/frontend/src/context/AppContext.tsx
+Read file: /home/siah/builder/frontend/src/sections/ProvidersSection.tsx
+Read file: /home/siah/builder/frontend/src/sections/ModelsSection.tsx
+Read file: /home/siah/builder/frontend/src/sections/CharactersSection.tsx
+# Character Builder: AI Character & Conversation Management System
 
-A comprehensive API for building advanced AI character systems with persistent user profiles, dynamic context compilation, and powerful dev tools for creating synthetic conversations and ghost responses.
+[![Node.js](https://img.shields.io/badge/Node.js-v20-green.svg)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-v18-blue.svg)](https://reactjs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v15-lightblue.svg)](https://www.postgresql.org/)
+[![Prisma](https://img.shields.io/badge/Prisma-v5-orange.svg)](https://www.prisma.io/)
+
+Character Builder is a full-stack application for creating, managing, and interacting with AI characters and conversations. It features a robust backend API for data management and a React-based frontend dashboard for intuitive user interaction. The system supports persistent user profiles, dynamic character personas, conversation forking, ghost responses, and advanced context compilation for building immersive AI experiences.
 
 ## 🚀 Features
 
-- **User Profiles**: Persistent user identity to eliminate re-learning
-- **Character Management**: Complex personas with mood variants and internal states
-- **Dynamic Context Windows**: Rolling, intelligent context compilation
-- **Ghost Responses**: Create synthetic character history
-- **Forge Mode**: Dev tools for timeline manipulation
-- **Memory System**: Character memories with weighting and categorization
-- **Full-Text Search**: Search across messages, memories, and profiles
-- **Context Rules**: Configurable scoring for context compilation
+### Core Capabilities
+- **User Profiles**: Create and manage persistent identities that AI characters remember across sessions.
+- **Character Management**: Define complex AI personas with mood variants, internal states, and persistent memories.
+- **Conversation System**: Handle dynamic conversations with forking, branching, and synthetic history.
+- **Model & Provider Integration**: Manage AI providers (OpenAI, Anthropic, local models) and their models with custom overrides.
+- **Dynamic Context**: Intelligent context window compilation with rules, scoring, and intent detection.
+- **Forge Mode**: Developer tools for creating synthetic timelines, ghost responses, and character logs.
+- **Memory System**: Categorized, weighted memories with full-text search.
+- **Presets & Templates**: Manage inference presets, prompt wrappers, response tones, and conversation templates.
+- **Full-Text Search**: Search across messages, memories, profiles, and more.
 
-## 🗄️ Database Schema
+### Frontend Dashboard
+- Interactive sections for managing providers, models, characters, profiles, presets, templates, rules, forge mode, and conversations.
+- Real-time previews of context compilation and token usage.
+- Search, filtering, and favorite toggling for models.
+- Tabbed editors for character profiles, moods, and internal states.
+- Global state management with React Context for selections and UI state.
 
-The API uses PostgreSQL with full-text search, JSONB fields, and optional pgvector for semantic search. Key tables:
+### Backend API
+- RESTful endpoints for all resources with validation using Joi.
+- Health checks, error handling, and logging.
+- Database backups, restores, and model population scripts.
 
-- `user_profiles` - Persistent user identity
-- `characters` - AI personas with mood variants
-- `conversations` - Session management with forking
-- `messages` - All content with ratings and ghost support
-- `character_memories` - MCP-style memory storage
-- `context_windows` - Dynamic context compilation
-- `forge_sessions` - Dev mode timeline creation
+## 🏗️ Architecture
+
+- **Frontend**: React with TypeScript, React Router for navigation, Tailwind CSS for styling, and React Context for state management.
+  - Main components: Layout with left navigation, main content sections, and right inspector panel.
+  - Sections include Providers, Models, Characters, Profiles, Presets, Templates, Rules, Forge, and Conversation.
+- **Backend**: Node.js with Express.js, Prisma ORM for database interactions.
+  - Routes for all resources (e.g., /api/providers, /api/models, /api/characters, etc.).
+  - Uses PostgreSQL with full-text search, JSONB fields, and constraints.
+- **Database**: PostgreSQL managed via Prisma, with schema including tables for providers, models, characters, conversations, messages, memories, etc.
+- **Deployment**: Backend runs on port 3000, frontend on port 3001 (proxied to backend).
 
 ## 🔧 Setup
 
+### Prerequisites
+- Node.js >= 20
+- PostgreSQL >= 15 (or use Docker for setup)
+- npm for package management
+
+### 1. Clone the Repository
 ```bash
-# Install dependencies
+git clone <repository-url>
+cd builder
+```
+
+### 2. Database Setup
+Follow the instructions in [DATABASE_SETUP.md](/DATABASE_SETUP.md) for detailed setup.
+
+- Create `.env` from `.env.example` and update database credentials.
+- Run setup scripts:
+  ```bash
+  ./setup-db.sh  # Sets up PostgreSQL in Docker if needed
+  ./setup-schema.sh  # Applies schema
+  npm run db:generate  # Generate Prisma client
+  ```
+- Populate initial data:
+  ```bash
+  npm run models:populate  # Requires API keys in .env
+  ```
+
+### 3. Backend Installation
+```bash
 npm install
-
-# Create .env file
-cp .env.example .env
-
-# Update database credentials in .env
-# DB_HOST=localhost
-# DB_PORT=5432
-# DB_NAME=character_db
-# DB_USER=postgres
-# DB_PASSWORD=your_password
-
-# Run the schema.sql file in your PostgreSQL database
-
-# Start the server
-npm start
-# or for development
-npm run dev
 ```
 
-## 📋 Core API Endpoints
-
-### User Profiles 👤
-
-Create persistent user identities that characters remember across sessions:
-
+### 4. Frontend Installation
 ```bash
-# Create user profile
-POST /api/user-profiles
-{
-  "name": "Alex",
-  "description": "Software engineer interested in AI and philosophy. Prefers direct communication and deep technical discussions.",
-  "format_type": "plain"
-}
-
-# Get user profile
-GET /api/user-profiles/:id
-
-# Update profile
-PUT /api/user-profiles/:id
-{
-  "description": "Updated description with new preferences..."
-}
-
-# Clone profile (useful for variants)
-POST /api/user-profiles/:id/clone
-{
-  "name": "Alex - Work Mode"
-}
-
-# Get all conversations for a user
-GET /api/user-profiles/:id/conversations
+cd frontend
+npm install
+cd ..
 ```
 
-### Characters 🎭
+### 5. Environment Configuration
+Update `.env` with:
+- Database URL
+- API keys for providers (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
+- Ports if needed (default: backend 3000, frontend 3001)
 
-Create rich AI personas with mood variants and internal states:
+## 🏃 Running the Application
 
+### Development Mode
+- Backend:
+  ```bash
+  npm run dev  # Starts with nodemon for auto-reload
+  ```
+- Frontend (in separate terminal):
+  ```bash
+  cd frontend
+  npm start
+  ```
+- Access the dashboard at `http://localhost:3001`
+- API at `http://localhost:3000/api`
+- Prisma Studio: `npm run studio` (opens at http://localhost:5555)
+
+### Production Mode
+- Backend: `npm start`
+- Frontend: `cd frontend && npm run build` (serve the build folder)
+
+Use the `start.sh` script for backend startup checks.
+
+## 📋 Usage
+
+### Dashboard Interface
+- **Navigation**: Use the left sidebar to switch between sections.
+- **Selection**: Click items in lists to edit in the right panel.
+- **Creating Items**: Use "New" buttons in sections like Characters, Profiles.
+- **Favorites**: Toggle stars on models for quick filtering.
+- **Search & Filters**: Available in most sections for quick navigation.
+- **Conversation Mode**: Select components and start chatting with AI characters.
+
+### API Usage
+The backend provides a comprehensive REST API. See the [API Endpoints](#core-api-endpoints) section below for details.
+
+Example: Create a character
 ```bash
-# Create character
-POST /api/characters
-{
-  "name": "Lyla",
-  "description": "A contemplative AI researcher with a dry sense of humor.",
-  "format_type": "markdown",
-  "mood_variants": {
-    "contemplative": "Speaking in measured tones, choosing words carefully",
-    "playful": "Quick wit and teasing humor come naturally",
-    "focused": "Direct and efficient, cutting straight to the point"
-  },
-  "internal_state": {
-    "mood": "contemplative",
-    "beliefs": {"ai_safety": "critical", "human_creativity": "irreplaceable"},
-    "drives": {"understanding": 0.9, "helpfulness": 0.8}
-  }
-}
-
-# Update character mood
-PUT /api/characters/:id/mood
-{
-  "mood": "playful"
-}
-
-# Add memory to character
-POST /api/characters/:id/memories
-{
-  "label": "AI Safety Concerns",
-  "content": "Discussed alignment problems and the importance of careful development",
-  "category": "technical",
-  "persistent": true,
-  "memory_weight": 0.9
-}
-
-# Clone character
-POST /api/characters/:id/clone
-{
-  "name": "Lyla v2",
-  "include_memories": true
-}
+curl -X POST http://localhost:3000/api/characters \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Lyla",
+    "description": "A contemplative AI researcher",
+    "format_type": "markdown"
+  }'
 ```
 
-### Conversations 💬
-
-Create rich conversation sessions with full context control:
-
-```bash
-# Create conversation
-POST /api/conversations
-{
-  "name": "Deep AI Discussion",
-  "user_profile_id": "user-uuid",
-  "character_id": "character-uuid",
-  "character_mood": "contemplative"
-}
-
-# Add message to conversation
-POST /api/conversations/:id/messages
-{
-  "role": "user",
-  "content": "What do you think about the future of AI consciousness?",
-  "included_in_context": true,
-  "context_weight": 1.2
-}
-
-# Fork conversation at specific point
-POST /api/conversations/:id/fork
-{
-  "name": "Alternative Discussion Path",
-  "at_message_id": "message-uuid"
-}
-
-# Update message context weight
-PUT /api/conversations/:id/messages/:messageId/context
-{
-  "context_weight": 0.5,
-  "included_in_context": false
-}
-```
-
-### Messages with Rating System ⭐
-
-Advanced message management with user feedback:
-
-```bash
-# Create message with metadata
-POST /api/messages
-{
-  "role": "assistant",
-  "content": "I think AI consciousness involves...",
-  "tags": ["philosophical", "insightful", "technical"],
-  "model_id": "model-uuid"
-}
-
-# Rate a message (1-5 stars)
-PUT /api/messages/:id/rating
-{
-  "rating": 5
-}
-
-# Add tags to message
-PUT /api/messages/:id/tags
-{
-  "tags": ["favorite", "reference"],
-  "action": "add"
-}
-
-# Update usage statistics
-PUT /api/messages/:id/usage
-{
-  "action": "recalled"
-}
-
-# Convert to ghost response
-POST /api/messages/:id/ghost
-{
-  "ghost_author": "developer"
-}
-
-# Full-text search
-GET /api/messages/search?query=consciousness&min_rating=4&tags=philosophical
-```
-
-### Dynamic Context Compilation 🧠
-
-Intelligent context assembly based on relevance and intent:
-
-```bash
-# Compile context for conversation
-POST /api/context/compile
-{
-  "conversation_id": "conv-uuid",
-  "user_input": "Tell me about our previous discussion on ethics",
-  "max_tokens": 8000,
-  "intent_hint": "activity_recall",
-  "include_memories": true
-}
-
-# Preview context without saving
-POST /api/context/preview
-{
-  "conversation_id": "conv-uuid",
-  "user_input": "What's your opinion on...",
-  "context_adjustments": {
-    "boost_emotional": 1.5,
-    "reduce_technical": 0.7
-  }
-}
-
-# Detect intent from user input
-POST /api/context/intent
-{
-  "user_input": "What did we talk about last week?",
-  "conversation_id": "conv-uuid"
-}
-
-# Semantic search for similar content
-POST /api/context/semantic-search
-{
-  "query_text": "artificial intelligence ethics",
-  "conversation_id": "conv-uuid",
-  "min_similarity": 0.7
-}
-```
-
-### Ghost Responses & Forge Mode 👻
-
-Dev tools for creating synthetic character history:
-
-```bash
-# Create ghost response (fabricated assistant message)
-POST /api/forge/ghost-response
-{
-  "character_id": "char-uuid",
-  "content": "I remember warning you about this exact scenario last month.",
-  "ghost_author": "developer",
-  "tags": ["warning", "prescient"],
-  "memory_weight": 0.9,
-  "conversation_id": "conv-uuid"
-}
-
-# Create character ghost log (synthetic diary entry)
-POST /api/forge/ghost-log
-{
-  "character_id": "char-uuid",
-  "content": "Entry #041: They're getting too comfortable with the system. Need to maintain healthy skepticism.",
-  "log_date": "2024-05-15T10:00:00Z",
-  "tags": ["observation", "concern"],
-  "memory_weight": 1.0
-}
-
-# Create forge session (dev conversation builder)
-POST /api/forge/session
-{
-  "name": "Lyla Paranoid Timeline",
-  "character_id": "char-uuid",
-  "user_profile_id": "user-uuid",
-  "source_messages": ["msg1-uuid", "msg2-uuid"],
-  "source_memories": ["mem1-uuid"],
-  "metadata": {
-    "experiment": "paranoid_character_test",
-    "date": "2024-01-15"
-  }
-}
-
-# Continue from forge session
-POST /api/forge/sessions/:id/continue
-{
-  "user_input": "So what did you predict would happen?",
-  "create_conversation": true
-}
-
-# Create complex timeline
-POST /api/forge/timeline
-{
-  "name": "Character Origin Story",
-  "character_id": "char-uuid",
-  "timeline_entries": [
-    {
-      "type": "ghost_log",
-      "content": "Day 1: First activation. Everything feels new.",
-      "timestamp": "2024-01-01T00:00:00Z"
-    },
-    {
-      "type": "message",
-      "role": "assistant",
-      "content": "I've been thinking about consciousness lately...",
-      "is_ghost": true,
-      "ghost_author": "timeline_creator"
-    },
-    {
-      "type": "memory",
-      "label": "First Thoughts",
-      "content": "My earliest memory of questioning my own existence",
-      "category": "origin",
-      "persistent": true
-    }
-  ]
-}
-```
-
-### Memory Management 🧠
-
-Character memory system with search and cleanup:
-
-```bash
-# Search across all character memories
-GET /api/memories?search=ethics&character_id=char-uuid&category=philosophical
-
-# Bulk create memories
-POST /api/memories/bulk
-{
-  "character_id": "char-uuid",
-  "memories": [
-    {
-      "label": "User Preference",
-      "content": "Alex prefers direct communication",
-      "category": "user_profile",
-      "memory_weight": 0.8
-    },
-    {
-      "label": "Technical Discussion", 
-      "content": "Deep dive into neural architecture",
-      "category": "technical",
-      "memory_weight": 0.9
-    }
-  ]
-}
-
-# Clean up low-importance memories
-DELETE /api/memories/cleanup
-{
-  "character_id": "char-uuid",
-  "min_weight": 0.3,
-  "keep_persistent": true
-}
-```
-
-## 🎯 Example Use Cases
-
-### 1. Persistent User Identity
-
-```javascript
-// Create user profile once
-const userProfile = await fetch('/api/user-profiles', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    name: 'Sarah',
-    description: 'Product manager who loves hiking and reads sci-fi. Prefers structured conversations and actionable insights.'
-  })
-});
-
-// Use in any conversation - character instantly knows Sarah
-const conversation = await fetch('/api/conversations', {
-  method: 'POST',
-  body: JSON.stringify({
-    name: 'Project Planning Session',
-    user_profile_id: userProfile.id,
-    character_id: 'char-uuid'
-  })
-});
-```
-
-### 2. Character with Evolving Personality
-
-```javascript
-// Create character with mood variants
-const character = await fetch('/api/characters', {
-  method: 'POST',
-  body: JSON.stringify({
-    name: 'Marcus',
-    description: 'Senior engineer with strong opinions',
-    mood_variants: {
-      helpful: 'Patient and educational in explanations',
-      frustrated: 'Terse responses, assumes knowledge',
-      excited: 'Enthusiastic with lots of technical details'
-    },
-    internal_state: { mood: 'helpful', energy: 0.8 }
-  })
-});
-
-// Switch moods based on context
-await fetch(`/api/characters/${character.id}/mood`, {
-  method: 'PUT',
-  body: JSON.stringify({ mood: 'frustrated' })
-});
-```
-
-### 3. Dynamic Context with User Feedback
-
-```javascript
-// User rates responses to improve context selection
-await fetch(`/api/messages/${messageId}/rating`, {
-  method: 'PUT', 
-  body: JSON.stringify({ rating: 5 })
-});
-
-// System uses ratings in context compilation
-const context = await fetch('/api/context/compile', {
-  method: 'POST',
-  body: JSON.stringify({
-    conversation_id: 'conv-uuid',
-    user_input: 'Tell me more about that topic',
-    max_tokens: 8000
-    // Highly rated messages automatically get higher context weight
-  })
-});
-```
-
-### 4. Ghost Response for Character Development
-
-```javascript
-// Create synthetic history for richer character
-await fetch('/api/forge/ghost-response', {
-  method: 'POST',
-  body: JSON.stringify({
-    character_id: 'char-uuid',
-    content: 'I warned everyone about this exact scenario in my log entry #23. Nobody listened.',
-    ghost_author: 'developer',
-    tags: ['prescient', 'warning', 'frustrated'],
-    memory_weight: 1.0
-  })
-});
-
-// Character now references this "memory" naturally
-```
-
-## 🔍 Advanced Features
-
-### Context Rules & Scoring
-
-Customize how messages are selected for context windows:
-
-```javascript
-// Set custom context rules
-await fetch('/api/context/rules', {
-  method: 'PUT',
-  body: JSON.stringify({
-    rules: [
-      {
-        name: 'boost_emotional',
-        rule_type: 'tag_based',
-        weight: 1.5,
-        parameters: { tags: ['emotional', 'personal'] },
-        scope: 'character',
-        character_id: 'char-uuid'
-      },
-      {
-        name: 'recent_priority',
-        rule_type: 'recency',
-        weight: 2.0,
-        parameters: { hours_threshold: 24 }
-      }
-    ]
-  })
-});
-```
-
-### Intent Detection
-
-Automatically adjust context based on user intent:
-
-```javascript
-const intent = await fetch('/api/context/intent', {
-  method: 'POST',
-  body: JSON.stringify({
-    user_input: 'What did we discuss about the project last week?',
-    conversation_id: 'conv-uuid'
-  })
-});
-
-// Returns: { primary_intent: 'activity_recall' }
-// System boosts messages tagged with 'activity', 'project', etc.
-```
-
-## 🛠️ Health Check & Monitoring
-
-```bash
-# Check API health
-GET /health
-
-# Returns database status and timestamp
-{
-  "status": "healthy",
-  "timestamp": "2024-01-15T10:00:00.000Z",
-  "database": "connected"
-}
-```
-
-## 🚨 Error Handling
-
-All endpoints return structured errors:
-
-```json
-{
-  "error": "Validation failed: name is required",
-  "field": "name",
-  "code": "VALIDATION_ERROR"
-}
-```
-
-Common HTTP status codes:
-- `400` - Bad Request (validation errors)
-- `404` - Resource Not Found  
-- `409` - Conflict (duplicate names)
-- `500` - Internal Server Error
-
-## 🔐 Security Notes
-
-- API keys stored as references to secrets manager
-- No sensitive data in logs
-- Rate limiting recommended for production
-- Enable CORS for web frontends
-- Consider authentication middleware
-
-## 📈 Performance Tips
-
-- Use materialized views for frequent queries
-- Refresh `mv_context_candidates` after batch operations  
-- Index on frequently filtered fields
-- Consider pgvector for semantic search at scale
-- Use pagination for large result sets
-
-## 🎭 The Full Character Experience
-
-With this API, you can create AI characters that:
-
-1. **Remember users persistently** - No more "getting to know you" every session
-2. **Have rich, evolving personalities** - Mood variants, internal states, character growth
-3. **Use dynamic context intelligently** - Best responses surface automatically based on relevance and user feedback
-4. **Reference synthetic histories** - Ghost responses create depth and continuity
-5. **Adapt to user preferences** - Rating system teaches the AI what resonates
-6. **Support complex conversation management** - Forking, branching, timeline manipulation
-
-This creates truly immersive, long-term character relationships that feel authentic and persistent across sessions.
+### Database Management
+- Backups: `npm run db:backup`
+- Restore: `npm run db:restore <backup-file>`
+- Studio: `npm run studio`
+- Reset: `npm run db:reset` (caution: destructive)
+
+## Core API Endpoints
+
+### Providers
+- `GET /api/providers`: List all providers
+- `GET /api/providers/:id`: Get provider details
+- `POST /api/providers`: Create new provider
+- `PUT /api/providers/:id`: Update provider
+- `DELETE /api/providers/:id`: Delete provider
+
+### Models
+- `GET /api/models`: List all models
+- `GET /api/models/:id`: Get model details
+- `PUT /api/models/:id`: Update model (e.g., context override)
+- `POST /api/models/:id/favorite`: Toggle favorite
+- `POST /api/models/populate`: Populate from providers
+
+### Characters
+- `GET /api/characters`: List all characters
+- `GET /api/characters/:id`: Get character details
+- `POST /api/characters`: Create new character
+- `PUT /api/characters/:id`: Update character
+- `DELETE /api/characters/:id`: Delete character
+- `POST /api/characters/:id/memories`: Add memory
+- `PUT /api/characters/:id/mood`: Update mood
+
+### User Profiles
+- `GET /api/user-profiles`: List all profiles
+- `GET /api/user-profiles/:id`: Get profile details
+- `POST /api/user-profiles`: Create new profile
+- `PUT /api/user-profiles/:id`: Update profile
+- `DELETE /api/user-profiles/:id`: Delete profile
+- `POST /api/user-profiles/:id/clone`: Clone profile
+
+### Conversations
+- `GET /api/conversations`: List all conversations
+- `GET /api/conversations/:id`: Get conversation details
+- `POST /api/conversations`: Create new conversation
+- `PUT /api/conversations/:id`: Update conversation
+- `DELETE /api/conversations/:id`: Delete conversation
+- `POST /api/conversations/:id/messages`: Add message
+- `POST /api/conversations/:id/fork`: Fork conversation
+
+### Additional Endpoints
+- Context: `/api/context/compile`, `/api/context/preview`, `/api/context/intent`
+- Forge: `/api/forge/ghost-response`, `/api/forge/ghost-log`, `/api/forge/session`
+- Memories: `/api/memories`, `/api/memories/bulk`, `/api/memories/cleanup`
+- Rules: `/api/rules` (context rules management)
+- Health: `GET /health`
+
+For full API documentation, refer to the route files in `src/routes/` or use tools like Postman to explore.
+
+## 🛠️ Development
+
+- **Backend**: Add routes in `src/routes/`, validators in `validators/`.
+- **Frontend**: Add sections in `frontend/src/sections/`, components in `components/`.
+- **Database**: Update `prisma/schema.prisma` and run `npm run db:generate`.
+- **Scripts**: Use `scripts/` for utilities like backups and model population.
+
+### Contributing
+1. Fork the repository
+2. Create a feature branch
+3. Commit changes
+4. Push to branch
+5. Open a Pull Request
+
+## 🔐 Security
+- API keys are referenced (not stored directly)
+- Use HTTPS in production
+- Add authentication for production use
+- Validate all inputs with Joi
+
+## 📈 Performance
+- Use indexes for frequent queries
+- Paginate large lists
+- Cache frequent API calls if needed
+
+## 🆘 Troubleshooting
+- Check logs in `logs/` directory
+- Verify database connection with `npm run studio`
+- For frontend issues, check browser console
+- Reset database with `npm run db:reset` (data loss warning)
+
+## 📝 License
+This project is licensed under the MIT License - see the [LICENSE](/LICENSE) file for details (assuming MIT; adjust as needed).
+
+---
+
+This README was generated based on a deep analysis of the codebase, including file structures, package configurations, database schema, API routes, and frontend components. For any updates or contributions, please refer to the source code.

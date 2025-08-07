@@ -50,6 +50,10 @@ export default function LeftNav() {
         
         <NavLink to="/rules" label="Context Rules" badge={state.counts.rules} />
         <NavLink to="/forge" label="Forge Mode" />
+        
+        <div className="border-t border-gray-200 my-2"></div>
+        
+        <NavLink to="/conversation" label="Conversation" />
       </nav>
     </aside>
   );

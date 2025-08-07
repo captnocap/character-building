@@ -15,9 +15,11 @@ export default function PresetsSection() {
 
   const fetchPresets = async () => {
     try {
-      const response = await fetch('/api/presets');
+      const response = await fetch('/api/inference-presets');
       const data = await response.json();
-      setPresets(data);
+      // Handle both array response and object with presets array
+      const presetsArray = Array.isArray(data) ? data : (data.presets || []);
+      setPresets(presetsArray);
     } catch (error) {
       console.error('Failed to fetch presets:', error);
     } finally {
@@ -43,7 +45,7 @@ export default function PresetsSection() {
         repetition_penalty: 1.1
       };
       
-      const response = await fetch('/api/presets', {
+      const response = await fetch('/api/inference-presets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPreset)
@@ -63,7 +65,7 @@ export default function PresetsSection() {
     if (!editingPreset) return;
     
     try {
-      const response = await fetch(`/api/presets/${editingPreset.id}`, {
+      const response = await fetch(`/api/inference-presets/${editingPreset.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -84,7 +86,7 @@ export default function PresetsSection() {
     if (!window.confirm('Are you sure you want to delete this preset?')) return;
     
     try {
-      await fetch(`/api/presets/${presetId}`, { method: 'DELETE' });
+      await fetch(`/api/inference-presets/${presetId}`, { method: 'DELETE' });
       setPresets(prev => prev.filter(p => p.id !== presetId));
       if (editingPreset?.id === presetId) {
         setEditingPreset(null);

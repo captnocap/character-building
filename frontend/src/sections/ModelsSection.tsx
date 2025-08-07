@@ -7,7 +7,7 @@ export default function ModelsSection() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedProvider, setSelectedProvider] = useState<string>('all');
+  const [selectedProviderSlug, setSelectedProviderSlug] = useState<string>('all');
   const [showFavorites, setShowFavorites] = useState(false);
   const { state, dispatch } = useAppContext();
 
@@ -49,15 +49,21 @@ export default function ModelsSection() {
     }
   };
 
-  const updateModelNickname = async (modelId: string, nickname: string) => {
+  const updateModel = async (modelId: string, updates: Partial<Model>) => {
     try {
+      // Convert undefined to null for the API call since the database uses null
+      const apiUpdates = { ...updates };
+      if ('context_window_override' in apiUpdates && apiUpdates.context_window_override === undefined) {
+        apiUpdates.context_window_override = null as any;
+      }
+      
       await fetch(`/api/models/${modelId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nickname })
+        body: JSON.stringify(apiUpdates)
       });
       setModels(prev => prev.map(model => 
-        model.id === modelId ? { ...model, nickname } : model
+        model.id === modelId ? { ...model, ...updates } : model
       ));
       dispatch({ type: 'SET_UI', payload: { dirty: false } });
     } catch (error) {
@@ -70,7 +76,7 @@ export default function ModelsSection() {
   const filteredModels = models.filter(model => {
     const matchesSearch = model.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          (model.nickname && model.nickname.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesProvider = selectedProvider === 'all' || model.provider_name === selectedProvider;
+    const matchesProvider = selectedProviderSlug === 'all' || model.provider_slug === selectedProviderSlug;
     const matchesFavorite = !showFavorites || model.is_favorite;
     return matchesSearch && matchesProvider && matchesFavorite;
   });
@@ -101,13 +107,15 @@ export default function ModelsSection() {
             
             <div className="flex gap-2">
               <select
-                value={selectedProvider}
-                onChange={(e) => setSelectedProvider(e.target.value)}
+                value={selectedProviderSlug}
+                onChange={(e) => setSelectedProviderSlug(e.target.value)}
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="all">All Providers</option>
                 {providers.map(provider => (
-                  <option key={provider.name} value={provider.name}>{provider.name}</option>
+                  <option key={provider.slug} value={provider.slug}>
+                    {provider.name} ({provider.slug})
+                  </option>
                 ))}
               </select>
               
@@ -155,10 +163,17 @@ export default function ModelsSection() {
                           <span className="text-yellow-500 text-xs">★</span>
                         )}
                       </div>
-                      <div className="text-sm text-gray-500 truncate">{model.provider_name}</div>
+                      <div className="text-sm text-gray-500 truncate">
+                        {model.provider_name} ({model.provider_slug})
+                      </div>
                     </div>
                     <div className="text-xs text-gray-400 text-right">
-                      <div>{(model.context_window / 1000).toFixed(0)}K</div>
+                      <div>
+                        {((model.context_window_override || model.context_window) / 1000).toFixed(0)}K
+                        {model.context_window_override && (
+                          <div className="text-green-600">override</div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -208,7 +223,7 @@ export default function ModelsSection() {
                     ));
                     dispatch({ type: 'SET_UI', payload: { dirty: true } });
                   }}
-                  onBlur={(e) => updateModelNickname(selectedModel.id, e.target.value)}
+                  onBlur={(e) => updateModel(selectedModel.id, { nickname: e.target.value })}
                   placeholder="Optional display name"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -218,20 +233,60 @@ export default function ModelsSection() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
                 <input
                   type="text"
-                  value={selectedModel.provider_name}
+                  value={`${selectedModel.provider_name} (${selectedModel.provider_slug})`}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-50"
                   readOnly
                 />
+                <p className="text-xs text-gray-500 mt-1">Provider slug: {selectedModel.provider_slug}</p>
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Context Window</label>
-                <input
-                  type="text"
-                  value={`${selectedModel.context_window.toLocaleString()} tokens`}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-50"
-                  readOnly
-                />
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Default (from provider)</label>
+                    <input
+                      type="text"
+                      value={`${selectedModel.context_window.toLocaleString()} tokens`}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-gray-50"
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">
+                      User Override {selectedModel.context_window_override && '(Active)'}
+                    </label>
+                    <input
+                      type="number"
+                      value={selectedModel.context_window_override || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const override = value ? parseInt(value) : undefined;
+                        setModels(prev => prev.map(model => 
+                          model.id === selectedModel.id ? { ...model, context_window_override: override } : model
+                        ));
+                        dispatch({ type: 'SET_UI', payload: { dirty: true } });
+                      }}
+                      onBlur={(e) => {
+                        const value = e.target.value;
+                        const override = value ? parseInt(value) : undefined;
+                        updateModel(selectedModel.id, { context_window_override: override });
+                      }}
+                      placeholder="Override context window size"
+                      min="1"
+                      max="2000000"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Set a custom context window size. Leave empty to use default ({selectedModel.context_window.toLocaleString()} tokens).
+                      {selectedModel.context_window_override && (
+                        <span className="text-green-600 font-medium">
+                          {' '}Currently using {selectedModel.context_window_override.toLocaleString()} tokens.
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
               </div>
               
               <div className="pt-4">
