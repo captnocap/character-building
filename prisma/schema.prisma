@@ -1,0 +1,323 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model character_memories {
+  id            String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  character_id  String?                  @db.Uuid
+  label         String                   @db.VarChar(255)
+  content       String
+  category      String?                  @db.VarChar(100)
+  persistent    Boolean?                 @default(false)
+  memory_weight Decimal?                 @default(1.0) @db.Decimal(3, 2)
+  tsv           Unsupported("tsvector")? @default(dbgenerated("to_tsvector('english'::regconfig, COALESCE(content, ''::text))"))
+  created_at    DateTime                 @default(now()) @db.Timestamptz(6)
+  characters    characters?              @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([character_id, category], map: "idx_character_memories_char_cat")
+  @@index([character_id], map: "idx_memories_character_id")
+  @@index([tsv], map: "idx_memories_tsv", type: Gin)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model characters {
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String                   @db.VarChar(255)
+  description            String
+  format_type            String?                  @default("plain")
+  mood_variants          Json?
+  internal_state         Json?
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  character_memories     character_memories[]
+  context_rules          context_rules[]
+  conversation_templates conversation_templates[]
+  conversations          conversations[]
+  forge_sessions         forge_sessions[]
+  ghost_logs             ghost_logs[]
+
+  @@index([internal_state], map: "idx_characters_internal_state", type: Gin)
+  @@index([mood_variants], map: "idx_characters_mood_variants", type: Gin)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model context_rules {
+  id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name            String         @db.VarChar(255)
+  rule_type       String
+  weight          Decimal?       @default(1.0) @db.Decimal(3, 2)
+  parameters      Json?
+  scope           String?        @default("global")
+  character_id    String?        @db.Uuid
+  conversation_id String?        @db.Uuid
+  active          Boolean?       @default(true)
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  characters      characters?    @relation(fields: [character_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  conversations   conversations? @relation(fields: [conversation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model context_windows {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String?  @db.VarChar(255)
+  type        String
+  source_type String?
+  source_id   String?  @db.Uuid
+  content     String
+  priority    Int?     @default(50)
+  locked      Boolean? @default(false)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([type, priority(sort: Desc)], map: "idx_ctx_windows_type_priority")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model conversation_messages {
+  conversation_id     String        @db.Uuid
+  message_id          String        @db.Uuid
+  position            Int
+  included_in_context Boolean?      @default(true)
+  context_weight      Decimal?      @default(1.0) @db.Decimal(3, 2)
+  semantic_relevance  Decimal?      @db.Decimal(3, 2)
+  created_at          DateTime      @default(now()) @db.Timestamptz(6)
+  conversations       conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messages            messages      @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([conversation_id, message_id])
+  @@unique([conversation_id, position], map: "uq_conv_position")
+  @@index([conversation_id, included_in_context, position], map: "idx_conv_ctx_active")
+  @@index([conversation_id, included_in_context, context_weight(sort: Desc)], map: "idx_conv_ctx_weight")
+  @@index([message_id], map: "idx_conv_msgs_message_id")
+}
+
+model conversation_templates {
+  id                  String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                String             @db.VarChar(255)
+  user_profile_id     String?            @db.Uuid
+  character_id        String?            @db.Uuid
+  prompt_wrapper_id   String?            @db.Uuid
+  response_tone_id    String?            @db.Uuid
+  response_setting_id String?            @db.Uuid
+  inference_preset_id String?            @db.Uuid
+  created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  characters          characters?        @relation(fields: [character_id], references: [id], onUpdate: NoAction)
+  inference_presets   inference_presets? @relation(fields: [inference_preset_id], references: [id], onUpdate: NoAction)
+  prompt_wrappers     prompt_wrappers?   @relation(fields: [prompt_wrapper_id], references: [id], onUpdate: NoAction)
+  response_settings   response_settings? @relation(fields: [response_setting_id], references: [id], onUpdate: NoAction)
+  response_tones      response_tones?    @relation(fields: [response_tone_id], references: [id], onUpdate: NoAction)
+  user_profiles       user_profiles?     @relation(fields: [user_profile_id], references: [id], onUpdate: NoAction)
+}
+
+model conversations {
+  id                        String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                      String?                 @db.VarChar(255)
+  model_id                  String?                 @db.Uuid
+  user_profile_id           String?                 @db.Uuid
+  character_id              String?                 @db.Uuid
+  character_mood            String?                 @db.VarChar(100)
+  prompt_wrapper_id         String?                 @db.Uuid
+  response_tone_id          String?                 @db.Uuid
+  response_setting_id       String?                 @db.Uuid
+  inference_preset_id       String?                 @db.Uuid
+  fork_from_conversation_id String?                 @db.Uuid
+  fork_from_message_id      String?                 @db.Uuid
+  is_synthetic              Boolean?                @default(false)
+  created_at                DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime                @default(now()) @db.Timestamptz(6)
+  context_rules             context_rules[]
+  conversation_messages     conversation_messages[]
+  characters                characters?             @relation(fields: [character_id], references: [id], onUpdate: NoAction)
+  conversations             conversations?          @relation("conversationsToconversations", fields: [fork_from_conversation_id], references: [id], onUpdate: NoAction)
+  other_conversations       conversations[]         @relation("conversationsToconversations")
+  messages                  messages?               @relation(fields: [fork_from_message_id], references: [id], onUpdate: NoAction)
+  inference_presets         inference_presets?      @relation(fields: [inference_preset_id], references: [id], onUpdate: NoAction)
+  models                    models?                 @relation(fields: [model_id], references: [id], onUpdate: NoAction)
+  prompt_wrappers           prompt_wrappers?        @relation(fields: [prompt_wrapper_id], references: [id], onUpdate: NoAction)
+  response_settings         response_settings?      @relation(fields: [response_setting_id], references: [id], onUpdate: NoAction)
+  response_tones            response_tones?         @relation(fields: [response_tone_id], references: [id], onUpdate: NoAction)
+  user_profiles             user_profiles?          @relation(fields: [user_profile_id], references: [id], onUpdate: NoAction)
+
+  @@index([character_id], map: "idx_conversations_character")
+  @@index([fork_from_conversation_id], map: "idx_conversations_fork_conv")
+  @@index([fork_from_message_id], map: "idx_conversations_fork_msg")
+  @@index([model_id], map: "idx_conversations_model_id")
+  @@index([inference_preset_id], map: "idx_conversations_preset_id")
+  @@index([prompt_wrapper_id], map: "idx_conversations_prompt_wrapper_id")
+  @@index([response_setting_id], map: "idx_conversations_setting_id")
+  @@index([response_tone_id], map: "idx_conversations_tone_id")
+  @@index([user_profile_id], map: "idx_conversations_user_profile")
+}
+
+model forge_sessions {
+  id               String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name             String         @db.VarChar(255)
+  compiled_context String
+  source_messages  String[]       @db.Uuid
+  source_memories  String[]       @db.Uuid
+  user_profile_id  String?        @db.Uuid
+  character_id     String?        @db.Uuid
+  metadata         Json?
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  characters       characters?    @relation(fields: [character_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user_profiles    user_profiles? @relation(fields: [user_profile_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ghost_logs {
+  id            String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  character_id  String?     @db.Uuid
+  entry_number  Int
+  log_date      DateTime?   @db.Timestamptz(6)
+  content       String
+  tags          String[]
+  memory_weight Decimal?    @default(1.0) @db.Decimal(3, 2)
+  provenance    Json?
+  created_at    DateTime    @default(now()) @db.Timestamptz(6)
+  characters    characters? @relation(fields: [character_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([character_id, log_date], map: "idx_ghost_logs_char_date")
+}
+
+model inference_presets {
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String                   @unique @db.VarChar(255)
+  temperature            Decimal?                 @db.Decimal(3, 2)
+  top_p                  Decimal?                 @db.Decimal(3, 2)
+  top_k                  Int?
+  min_p                  Decimal?                 @db.Decimal(3, 2)
+  max_tokens             Int?
+  frequency_penalty      Decimal?                 @db.Decimal(3, 2)
+  presence_penalty       Decimal?                 @db.Decimal(3, 2)
+  repetition_penalty     Decimal?                 @db.Decimal(3, 2)
+  seed                   Int?
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  conversation_templates conversation_templates[]
+  conversations          conversations[]
+  messages               messages[]
+}
+
+model intent_patterns {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  pattern        String   @db.VarChar(255)
+  intent_type    String   @db.VarChar(100)
+  context_tags   String[]
+  priority_boost Decimal? @default(1.5) @db.Decimal(3, 2)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([pattern(ops: raw("gin_trgm_ops"))], map: "idx_intent_pattern_trgm", type: Gin)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model messages {
+  id                    String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  role                  String
+  content               String
+  is_ghost              Boolean?                 @default(false)
+  ghost_author          String?                  @db.VarChar(100)
+  rating                Int?
+  tags                  String[]
+  usage_stats           Json?
+  provenance            Json?
+  model_id              String?                  @db.Uuid
+  inference_preset_id   String?                  @db.Uuid
+  tsv                   Unsupported("tsvector")? @default(dbgenerated("to_tsvector('english'::regconfig, COALESCE(content, ''::text))"))
+  created_at            DateTime                 @default(now()) @db.Timestamptz(6)
+  conversation_messages conversation_messages[]
+  conversations         conversations[]
+  inference_presets     inference_presets?       @relation(fields: [inference_preset_id], references: [id], onUpdate: NoAction)
+  models                models?                  @relation(fields: [model_id], references: [id], onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_messages_created")
+  @@index([is_ghost], map: "idx_messages_is_ghost")
+  @@index([model_id], map: "idx_messages_model_id")
+  @@index([inference_preset_id], map: "idx_messages_preset_id")
+  @@index([rating], map: "idx_messages_rating")
+  @@index([role], map: "idx_messages_role")
+  @@index([tags], map: "idx_messages_tags", type: Gin)
+  @@index([tsv], map: "idx_messages_tsv", type: Gin)
+  @@index([usage_stats], map: "idx_messages_usage_stats", type: Gin)
+}
+
+model models {
+  id             String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  provider_id    String?         @db.Uuid
+  name           String          @db.VarChar(255)
+  nickname       String?         @db.VarChar(255)
+  context_window Int
+  is_favorite    Boolean?        @default(false)
+  created_at     DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime        @default(now()) @db.Timestamptz(6)
+  conversations  conversations[]
+  messages       messages[]
+  providers      providers?      @relation(fields: [provider_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider_id, name], map: "uq_model_per_provider")
+  @@index([is_favorite], map: "idx_models_favorite")
+  @@index([provider_id], map: "idx_models_provider_id")
+}
+
+model prompt_wrappers {
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String                   @unique @db.VarChar(255)
+  before_text            String?
+  after_text             String?
+  tsv                    Unsupported("tsvector")? @default(dbgenerated("to_tsvector('english'::regconfig, ((COALESCE(before_text, ''::text) || ' '::text) || COALESCE(after_text, ''::text)))"))
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  conversation_templates conversation_templates[]
+  conversations          conversations[]
+
+  @@index([tsv], map: "idx_prompt_wrappers_tsv", type: Gin)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model providers {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String   @unique @db.VarChar(255)
+  type        String
+  base_url    String?
+  api_key_ref String?  @db.VarChar(255)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  models      models[]
+}
+
+model response_settings {
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String                   @unique @db.VarChar(255)
+  content                String
+  tsv                    Unsupported("tsvector")? @default(dbgenerated("to_tsvector('english'::regconfig, COALESCE(content, ''::text))"))
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  conversation_templates conversation_templates[]
+  conversations          conversations[]
+
+  @@index([tsv], map: "idx_response_settings_tsv", type: Gin)
+}
+
+model response_tones {
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String                   @unique @db.VarChar(255)
+  instruction            String
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  conversation_templates conversation_templates[]
+  conversations          conversations[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model user_profiles {
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                   String                   @db.VarChar(255)
+  description            String
+  format_type            String?                  @default("plain")
+  created_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime                 @default(now()) @db.Timestamptz(6)
+  conversation_templates conversation_templates[]
+  conversations          conversations[]
+  forge_sessions         forge_sessions[]
+}

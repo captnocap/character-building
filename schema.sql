@@ -1,0 +1,446 @@
+-- Character & Conversation Database Schema
+-- Run this after PostgreSQL installation
+
+-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+-- CREATE EXTENSION IF NOT EXISTS "vector"; -- Uncomment if pgvector installed successfully
+
+-- Auto-update trigger for updated_at
+CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger AS $
+BEGIN NEW.updated_at = now(); RETURN NEW; END; $ LANGUAGE plpgsql;
+
+-- ============================================
+-- PROVIDERS & MODELS
+-- ============================================
+
+-- Providers: OpenAI, Anthropic, custom URLs, local
+CREATE TABLE providers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL UNIQUE,
+    slug VARCHAR(50) UNIQUE, -- Human-readable identifier (e.g., 'openai', 'anthropic', 'nanogpt')
+    type TEXT CHECK (type IN ('openai', 'anthropic', 'custom_openai', 'local')) NOT NULL,
+    base_url TEXT,
+    api_key_ref VARCHAR(255), -- Reference to secrets manager, not actual key
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Unique constraint on base_url when not null
+CREATE UNIQUE INDEX uq_providers_base_url ON providers (base_url) WHERE base_url IS NOT NULL;
+
+-- Index for slug lookups
+CREATE INDEX idx_providers_slug ON providers (slug);
+
+-- Models with context windows
+CREATE TABLE models (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    provider_id UUID REFERENCES providers(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    nickname VARCHAR(255),
+    context_window INTEGER NOT NULL,
+    is_favorite BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_model_per_provider UNIQUE (provider_id, name)
+);
+
+CREATE TRIGGER trg_models_updated_at BEFORE UPDATE ON models
+    FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- Create indexes for models
+CREATE INDEX idx_models_favorite ON models (is_favorite);
+CREATE INDEX idx_models_provider_id ON models (provider_id);
+
+-- ============================================
+-- INFERENCE & SETTINGS
+-- ============================================
+
+-- Preset inference configurations
+CREATE TABLE inference_presets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL UNIQUE,
+    temperature DECIMAL(3,2),
+    top_p DECIMAL(3,2),
+    top_k INTEGER,
+    min_p DECIMAL(3,2),
+    max_tokens INTEGER,
+    frequency_penalty DECIMAL(3,2),
+    presence_penalty DECIMAL(3,2),
+    repetition_penalty DECIMAL(3,2),
+    seed INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_inference_presets_updated_at BEFORE UPDATE ON inference_presets
+    FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- ============================================
+-- USER & CHARACTER PROFILES
+-- ============================================
+
+-- User profiles for persistent identity
+CREATE TABLE user_profiles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    format_type TEXT CHECK (format_type IN ('plain', 'markdown', 'json')) DEFAULT 'plain',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_user_profiles_updated_at BEFORE UPDATE ON user_profiles
+    FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- Characters (personas) with flexible formats
+CREATE TABLE characters (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    format_type TEXT CHECK (format_type IN ('plain', 'markdown', 'json')) DEFAULT 'plain',
+    mood_variants JSONB,
+    internal_state JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_characters_updated_at BEFORE UPDATE ON characters
+    FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE INDEX idx_characters_mood_variants ON characters USING GIN (mood_variants);
+CREATE INDEX idx_characters_internal_state ON characters USING GIN (internal_state);
+
+-- ============================================
+-- PROMPT COMPONENTS
+-- ============================================
+
+-- System prompt wrappers
+CREATE TABLE prompt_wrappers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL UNIQUE,
+    before_text TEXT,
+    after_text TEXT,
+    tsv tsvector GENERATED ALWAYS AS (
+        to_tsvector('english', coalesce(before_text,'') || ' ' || coalesce(after_text,''))
+    ) STORED,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_prompt_wrappers_tsv ON prompt_wrappers USING GIN (tsv);
+
+-- Response tones
+CREATE TABLE response_tones (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL UNIQUE,
+    instruction TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Settings for injection
+CREATE TABLE response_settings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content,''))) STORED,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_response_settings_tsv ON response_settings USING GIN (tsv);
+
+-- ============================================
+-- MESSAGES
+-- ============================================
+
+-- Messages: standalone, reusable units with ratings and ghost support
+CREATE TABLE messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    role TEXT CHECK (role IN ('user', 'assistant', 'system', 'tool')) NOT NULL,
+    content TEXT NOT NULL,
+    is_ghost BOOLEAN DEFAULT FALSE,
+    ghost_author VARCHAR(100),
+    rating INTEGER CHECK (rating IS NULL OR (rating BETWEEN 1 AND 5)),
+    tags TEXT[],
+    usage_stats JSONB,
+    provenance JSONB, -- Tool names, pipelines, forge session id, etc.
+    model_id UUID REFERENCES models(id) ON DELETE SET NULL,
+    inference_preset_id UUID REFERENCES inference_presets(id) ON DELETE SET NULL,
+    -- embedding vector(1536), -- Uncomment if pgvector available
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content,''))) STORED,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Create indexes for messages
+CREATE INDEX idx_messages_created ON messages (created_at);
+CREATE INDEX idx_messages_role ON messages (role);
+CREATE INDEX idx_messages_rating ON messages (rating);
+CREATE INDEX idx_messages_is_ghost ON messages (is_ghost);
+CREATE INDEX idx_messages_model_id ON messages (model_id);
+CREATE INDEX idx_messages_preset_id ON messages (inference_preset_id);
+CREATE INDEX idx_messages_tags ON messages USING GIN (tags);
+CREATE INDEX idx_messages_usage_stats ON messages USING GIN (usage_stats);
+CREATE INDEX idx_messages_tsv ON messages USING GIN (tsv);
+
+-- Uncomment if pgvector is available
+-- CREATE INDEX idx_messages_embedding_l2 ON messages USING ivfflat (embedding vector_l2_ops);
+
+-- ============================================
+-- CHARACTER MEMORIES
+-- ============================================
+
+-- Character memories (MCP integration)
+CREATE TABLE character_memories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    character_id UUID REFERENCES characters(id) ON DELETE CASCADE,
+    label VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    category VARCHAR(100),
+    persistent BOOLEAN DEFAULT FALSE,
+    memory_weight DECIMAL(3,2) DEFAULT 1.0 CHECK (memory_weight BETWEEN 0.0 AND 1.0),
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(content,''))) STORED,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_character_memories_char_cat ON character_memories (character_id, category);
+CREATE INDEX idx_memories_character_id ON character_memories (character_id);
+CREATE INDEX idx_memories_tsv ON character_memories USING GIN (tsv);
+
+-- ============================================
+-- CONTEXT WINDOWS
+-- ============================================
+
+-- Context windows for dynamic compilation
+CREATE TABLE context_windows (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255),
+    type TEXT CHECK (type IN ('system', 'user', 'message', 'memory', 'profile')) NOT NULL,
+    source_type TEXT CHECK (source_type IN ('message','user_profile','character','memory','conversation')),
+    source_id UUID,
+    content TEXT NOT NULL,
+    priority INTEGER DEFAULT 50 CHECK (priority BETWEEN 0 AND 100),
+    locked BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_ctx_windows_type_priority ON context_windows (type, priority DESC);
+
+-- ============================================
+-- CONVERSATIONS
+-- ============================================
+
+-- Conversations: compositions with full modular support
+CREATE TABLE conversations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255),
+    model_id UUID REFERENCES models(id) ON DELETE SET NULL,
+    user_profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
+    character_id UUID REFERENCES characters(id) ON DELETE SET NULL,
+    character_mood VARCHAR(100),
+    prompt_wrapper_id UUID REFERENCES prompt_wrappers(id) ON DELETE SET NULL,
+    response_tone_id UUID REFERENCES response_tones(id) ON DELETE SET NULL,
+    response_setting_id UUID REFERENCES response_settings(id) ON DELETE SET NULL,
+    inference_preset_id UUID REFERENCES inference_presets(id) ON DELETE SET NULL,
+    fork_from_conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+    fork_from_message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+    is_synthetic BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER trg_conversations_updated_at BEFORE UPDATE ON conversations
+    FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+CREATE INDEX idx_conversations_user_profile ON conversations (user_profile_id);
+CREATE INDEX idx_conversations_character ON conversations (character_id);
+CREATE INDEX idx_conversations_model_id ON conversations (model_id);
+CREATE INDEX idx_conversations_preset_id ON conversations (inference_preset_id);
+CREATE INDEX idx_conversations_prompt_wrapper_id ON conversations (prompt_wrapper_id);
+CREATE INDEX idx_conversations_tone_id ON conversations (response_tone_id);
+CREATE INDEX idx_conversations_setting_id ON conversations (response_setting_id);
+CREATE INDEX idx_conversations_fork_conv ON conversations (fork_from_conversation_id);
+CREATE INDEX idx_conversations_fork_msg ON conversations (fork_from_message_id);
+
+-- Junction: build conversations from any messages with context control
+CREATE TABLE conversation_messages (
+    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id UUID REFERENCES messages(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    included_in_context BOOLEAN DEFAULT TRUE,
+    context_weight DECIMAL(3,2) DEFAULT 1.0 CHECK (context_weight >= 0.0 AND context_weight <= 5.0),
+    semantic_relevance DECIMAL(3,2),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (conversation_id, message_id),
+    CONSTRAINT uq_conv_position UNIQUE (conversation_id, position)
+);
+
+CREATE INDEX idx_conv_ctx_active ON conversation_messages
+    (conversation_id, included_in_context, position);
+CREATE INDEX idx_conv_ctx_weight ON conversation_messages 
+    (conversation_id, included_in_context, context_weight DESC);
+CREATE INDEX idx_conv_ctx_active_only
+  ON conversation_messages (conversation_id, position)
+  WHERE included_in_context = TRUE;
+CREATE INDEX idx_conv_msgs_message_id ON conversation_messages (message_id);
+
+-- ============================================
+-- INTENT & CONTEXT RULES
+-- ============================================
+
+-- Intent patterns for context loading
+CREATE TABLE intent_patterns (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    pattern VARCHAR(255) NOT NULL,
+    intent_type VARCHAR(100) NOT NULL,
+    context_tags TEXT[],
+    priority_boost DECIMAL(3,2) DEFAULT 1.5,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_intent_pattern_trgm ON intent_patterns USING GIN (pattern gin_trgm_ops);
+
+-- Context compilation rules
+CREATE TABLE context_rules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    rule_type TEXT CHECK (rule_type IN ('recency', 'relevance', 'rating', 'recall_frequency', 'tag_based')) NOT NULL,
+    weight DECIMAL(3,2) DEFAULT 1.0,
+    parameters JSONB,
+    scope TEXT CHECK (scope IN ('global','character','conversation')) DEFAULT 'global',
+    character_id UUID REFERENCES characters(id),
+    conversation_id UUID REFERENCES conversations(id),
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================
+-- DEV MODE & FORGE
+-- ============================================
+
+-- Dev mode conversation forge sessions
+CREATE TABLE forge_sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    compiled_context TEXT NOT NULL,
+    source_messages UUID[],
+    source_memories UUID[],
+    user_profile_id UUID REFERENCES user_profiles(id),
+    character_id UUID REFERENCES characters(id),
+    metadata JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Ghost response logs (synthetic history)
+CREATE TABLE ghost_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    character_id UUID REFERENCES characters(id) ON DELETE CASCADE,
+    entry_number INTEGER NOT NULL,
+    log_date TIMESTAMPTZ,
+    content TEXT NOT NULL,
+    tags TEXT[],
+    memory_weight DECIMAL(3,2) DEFAULT 1.0 CHECK (memory_weight BETWEEN 0.0 AND 1.0),
+    provenance JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_ghost_logs_char_date ON ghost_logs (character_id, log_date);
+
+-- ============================================
+-- TEMPLATES
+-- ============================================
+
+-- Templates for quick conversation setup
+CREATE TABLE conversation_templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    user_profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
+    character_id UUID REFERENCES characters(id) ON DELETE SET NULL,
+    prompt_wrapper_id UUID REFERENCES prompt_wrappers(id) ON DELETE SET NULL,
+    response_tone_id UUID REFERENCES response_tones(id) ON DELETE SET NULL,
+    response_setting_id UUID REFERENCES response_settings(id) ON DELETE SET NULL,
+    inference_preset_id UUID REFERENCES inference_presets(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================
+-- MATERIALIZED VIEWS
+-- ============================================
+
+-- Precompute hot set of messages per conversation
+CREATE MATERIALIZED VIEW mv_context_candidates AS
+SELECT cm.conversation_id,
+       m.id AS message_id,
+       cm.context_weight,
+       cm.semantic_relevance,
+       m.rating,
+       m.created_at
+FROM conversation_messages cm
+JOIN messages m ON m.id = cm.message_id
+WHERE cm.included_in_context = TRUE
+WITH NO DATA;
+
+-- unique index required for CONCURRENTLY
+CREATE UNIQUE INDEX idx_mv_ctx_unique
+  ON mv_context_candidates (conversation_id, message_id);
+
+-- Initial refresh
+REFRESH MATERIALIZED VIEW mv_context_candidates;
+
+-- ============================================
+-- CONVENIENCE VIEWS
+-- ============================================
+
+-- Latest favorites with provider info
+CREATE VIEW v_favorite_models AS
+SELECT m.*, p.name AS provider_name, p.type AS provider_type
+FROM models m
+JOIN providers p ON p.id = m.provider_id
+WHERE m.is_favorite = TRUE;
+
+-- Conversation assembled "candidate feed"
+CREATE VIEW v_conversation_feed AS
+SELECT cm.conversation_id, m.*, cm.position, cm.context_weight, cm.semantic_relevance
+FROM conversation_messages cm
+JOIN messages m ON m.id = cm.message_id
+ORDER BY cm.conversation_id, cm.position;
+
+-- ============================================
+-- SAMPLE DATA (Optional)
+-- ============================================
+
+-- Insert sample provider
+INSERT INTO providers (name, type, api_key_ref) VALUES 
+  ('Local Ollama', 'local', NULL),
+  ('OpenAI', 'openai', 'openai_key_ref'),
+  ('Anthropic', 'anthropic', 'anthropic_key_ref');
+
+-- Insert sample models
+INSERT INTO models (provider_id, name, context_window, is_favorite) 
+SELECT id, 'llama3.1:8b', 128000, true FROM providers WHERE name = 'Local Ollama'
+UNION ALL
+SELECT id, 'gpt-4', 128000, true FROM providers WHERE name = 'OpenAI'
+UNION ALL
+SELECT id, 'claude-3-sonnet', 200000, true FROM providers WHERE name = 'Anthropic';
+
+-- Insert sample inference preset
+INSERT INTO inference_presets (name, temperature, top_p, max_tokens) VALUES 
+  ('Balanced', 0.7, 0.9, 2000),
+  ('Creative', 0.9, 0.95, 2000),
+  ('Precise', 0.3, 0.8, 1000);
+
+-- Insert sample response tone
+INSERT INTO response_tones (name, instruction) VALUES 
+  ('Professional', 'Respond in a professional, clear, and structured manner'),
+  ('Casual', 'Respond in a casual, friendly, and conversational tone'),
+  ('Technical', 'Respond with technical precision and detailed explanations');
+
+COMMIT;
+
+-- Final message
+DO $$
+BEGIN
+    RAISE NOTICE '✅ Database schema created successfully!';
+    RAISE NOTICE '📊 Created % tables with full indexes and constraints', 
+        (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public');
+    RAISE NOTICE '🎯 Sample data inserted for providers, models, and presets';
+    RAISE NOTICE '🚀 Ready to start the API server!';
+END $$;

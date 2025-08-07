@@ -1,0 +1,338 @@
+Here you go — **Builder** in SleepySyntax, with progressive disclosure, lazy sections, and a Forge mode. Drop-in scaffold; wire your services to the `api:` bits.
+
+```
+{builder$app:(
+  meta:(name:Builder, version:v0.1),
+
+  layout:(
+    shell:(grid[cols:260px_1fr_380px, h:screen]:[
+      leftnav, 
+      mainpane, 
+      inspector
+    ]),
+    leftnav:(aside:(column[gap:2,p:3]:[
+      h3:Builder,
+      navlist:(column[gap:1]:[
+        navlink:/providers:Providers:badge:api.build.counts.providers,
+        navlink:/models:Models:badge:api.build.counts.models,
+        navlink:/characters:Characters:badge:api.build.counts.characters,
+        navlink:/profiles:User_Profiles:badge:api.build.counts.profiles,
+        navlink:/presets:Presets:badge:api.build.counts.presets,
+        navlink:/templates:Templates:badge:api.build.counts.templates,
+        divider,
+        navlink:/rules:Context_Rules:badge:api.build.counts.rules,
+        navlink:/forge:Forge_Mode
+      ])
+    ])),
+    mainpane:(router:routes),
+    inspector:(aside:(column[p:3,gap:3,border-l:subtle]:[
+      button$primary(onClick:actions.preview_context):Preview_Context,
+      token_gauge:(row:[label:Tokens, meter:value:state.preview.tokens.used/max:state.preview.tokens.max]),
+      score_breakdown:forEach:state.preview.rules:[row:[small:item.name,badge:item.weight]],
+      pre_prompt:(pre[text:truncate(state.preview.prompt, 4000)])
+    ]))
+  ),
+
+  routes:(
+    "/":welcome_empty,
+    "/providers":section$providers,
+    "/models":section$models,
+    "/characters":section$characters,
+    "/profiles":section$profiles,
+    "/presets":section$presets,
+    "/templates":section$templates,
+    "/rules":section$rules,
+    "/forge":section$forge
+  ),
+
+  state:(
+    selection:(providerId?, modelId?, characterId?, profileId?),
+    ui:(forgeEnabled:false, dirty:false),
+    preview:(prompt:"", tokens:(used:0,max:0), rules:[]),
+    forge:(timeline:[]) // ordered ContextEntry[]
+  ),
+
+  // ===== Sections =====
+  sections:(
+
+    // ------- Providers -------
+    section$providers:(split[left:360px, right:auto]:[
+      // LEFT: list (lazy)
+      card$title:Providers_List:(column[gap:1]:[
+        search_input(placeholder:"Search providers", onInput:actions.q.providers),
+        list$providers:virtual(forEach:api.providers.list:[row$item(provider_row)]),
+        pager:onEnd:actions.next.providers
+      ]),
+      // RIGHT: editor (lazy on select)
+      panel$editor:(if:state.selection.providerId:[
+        provider_editor:(
+          basic:(column[g:2]:[
+            input:name(value:api.providers.byId.name, onBlur:actions.providers.update),
+            select:type(options:['openai','anthropic','custom_openai','local'], value:api.providers.byId.type, onChange:actions.providers.update),
+            input:base_url(value:api.providers.byId.base_url, onBlur:actions.providers.update),
+            input:api_key_ref(value:api.providers.byId.api_key_ref, onBlur:actions.providers.update)
+          ]),
+          actions:(row:[
+            button$secondary(onClick:actions.providers.ping):Ping,
+            button$danger(onClick:actions.providers.delete):Delete
+          ])
+        )
+      ], else:[empty_state:Select_a_provider]))
+    ]),
+
+    // ------- Models -------
+    section$models:(split[left:420px,right:auto]:[
+      card$title:Models:(column[g:2]:[
+        row:[select:provider(filter:api.providers.options, onChange:actions.models.filterByProvider),
+             checkbox:★_Favorites(checked:filters.models.fav, onChange:actions.models.toggleFav)],
+        list$models:virtual(forEach:api.models.list:[row$item(model_row)]),
+        pager:onEnd:actions.next.models
+      ]),
+      panel$editor:(if:state.selection.modelId:[
+        model_editor:(tabs:[
+          tab:Basics:(column[g:2]:[
+            text:provider(api.models.byId.provider_name),
+            input:nickname(value:api.models.byId.nickname, onBlur:actions.models.update),
+            number:context_window(value:api.models.byId.context_window, readOnly:true),
+            toggle:Favorite(checked:api.models.byId.is_favorite, onChange:actions.models.toggleFavorite)
+          ]),
+          tab:Advanced(collapsed:true):(
+            button$secondary(onClick:actions.models.syncFromProvider):Fetch_from_Provider
+          )
+        ])
+      ], else:[empty_state:Select_a_model]))
+    ]),
+
+    // ------- Characters -------
+    section$characters:(split[left:420px,right:auto]:[
+      card:Characters:(column[g:2]:[
+        search_input(placeholder:"Search characters", onInput:actions.q.characters),
+        list$characters:virtual(forEach:api.characters.list:[row$item(character_row)]),
+        pager:onEnd:actions.next.characters
+      ]),
+      panel$editor:(if:state.selection.characterId:[
+        character_editor:(tabs:[
+          tab:Profile:(column[g:2]:[
+            input:name(value:api.characters.byId.name, onBlur:actions.characters.update),
+            select:format_type(options:['plain','markdown','json'], value:api.characters.byId.format_type, onChange:actions.characters.update),
+            textarea:description(value:api.characters.byId.description, rows:10, onBlur:actions.characters.update)
+          ]),
+          tab:Mood_Variants(collapsed:true):(
+            json_editor:value:api.characters.byId.mood_variants, onSave:actions.characters.update_json
+          ),
+          tab:Internal_State(collapsed:true):(
+            json_editor:value:api.characters.byId.internal_state, onSave:actions.characters.update_json
+          )
+        ])
+      ], else:[empty_state:Select_a_character]))
+    ]),
+
+    // ------- User Profiles -------
+    section$profiles:(split[left:420px,right:auto]:[
+      card:User_Profiles:(column[g:2]:[
+        list$profiles:virtual(forEach:api.profiles.list:[row$item(profile_row)]),
+        pager:onEnd:actions.next.profiles,
+        button$primary(onClick:actions.profiles.create):New_Profile
+      ]),
+      panel$editor:(if:state.selection.profileId:[
+        profile_editor:(column[g:2]:[
+          input:name(value:api.profiles.byId.name, onBlur:actions.profiles.update),
+          select:format_type(options:['plain','markdown','json'], value:api.profiles.byId.format_type, onChange:actions.profiles.update),
+          markdown_editor:value:api.profiles.byId.description, onSave:actions.profiles.update
+        ])
+      ], else:[empty_state:Select_a_profile]))
+    ]),
+
+    // ------- Presets -------
+    section$presets:(split[left:420px,right:auto]:[
+      card:Presets:(column[g:2]:[
+        list$presets:forEach:api.presets.list:[row$item(preset_row)],
+        button$primary(onClick:actions.presets.create):New_Preset
+      ]),
+      panel$editor:(if:api.presets.activeId:[
+        preset_editor:(accordion:[
+          section:Basics:(grid[cols:2,g:2]:[
+            slider:temperature(min:0,max:2,step:0.01,value:api.presets.byId.temperature,onChange:actions.presets.update),
+            slider:top_p(min:0,max:1,step:0.01,value:api.presets.byId.top_p,onChange:actions.presets.update),
+            slider:top_k(min:0,max:200,value:api.presets.byId.top_k,onChange:actions.presets.update),
+            number:max_tokens(value:api.presets.byId.max_tokens,onBlur:actions.presets.update)
+          ]),
+          section:Penalties(collapsed:true):(
+            grid[cols:2,g:2]:[
+              slider:frequency_penalty(min:-2,max:2,step:0.01,value:api.presets.byId.frequency_penalty,onChange:actions.presets.update),
+              slider:presence_penalty(min:-2,max:2,step:0.01,value:api.presets.byId.presence_penalty,onChange:actions.presets.update),
+              slider:repetition_penalty(min:0,max:2,step:0.01,value:api.presets.byId.repetition_penalty,onChange:actions.presets.update)
+            ]
+          )
+        ])
+      ], else:[empty_state:Select_a_preset]))
+    ]),
+
+    // ------- Templates -------
+    section$templates:(wizard:[
+      step:Choose_Profile:(select:list:api.profiles.options, onSelect:actions.templates.pickProfile),
+      step:Choose_Character:(select:list:api.characters.options, onSelect:actions.templates.pickCharacter),
+      step:Choose_Model:(select:list:api.models.options, onSelect:actions.templates.pickModel),
+      step:Choose_Prompt_Wrapper:(select:list:api.wrappers.options, onSelect:actions.templates.pickWrapper),
+      step:Choose_Tone:(select:list:api.tones.options, onSelect:actions.templates.pickTone),
+      step:Choose_Preset:(select:list:api.presets.options, onSelect:actions.templates.pickPreset),
+      step:Review:(summary:[profile,character,model,wrapper,tone,preset], 
+                  actions:[button$primary(onClick:actions.templates.createConversation):Create_Conversation])
+    ]),
+
+    // ------- Rules -------
+    section$rules:(split[left:420px,right:auto]:[
+      card:Rules:(column[g:2]:[
+        list$rules:forEach:api.rules.list:[row$item(rule_row)],
+        button$primary(onClick:actions.rules.create):New_Rule
+      ]),
+      panel$editor:(if:api.rules.activeId:[
+        rule_editor:(grid[cols:2,g:2]:[
+          select:rule_type(options:['recency','relevance','rating','recall_frequency','tag_based'], value:api.rules.byId.rule_type, onChange:actions.rules.update),
+          slider:weight(min:0,max:5,step:0.1,value:api.rules.byId.weight,onChange:actions.rules.update),
+          select:scope(options:['global','character','conversation'], value:api.rules.byId.scope, onChange:actions.rules.update),
+          select:character(optional:true, options:api.characters.options, value:api.rules.byId.character_id, onChange:actions.rules.update),
+          select:conversation(optional:true, options:api.conversations.options, value:api.rules.byId.conversation_id, onChange:actions.rules.update),
+          json_editor:parameters:value:api.rules.byId.parameters,onSave:actions.rules.update
+        ]),
+        tester:(column[g:2,border-t:subtle,pt:3,mt:3]:[
+          h4:Test_Against_Message_History,
+          message_picker:onPick:actions.rules.testAgainstMessage,
+          results:(column:[pre:state.rules.testResult, meter:state.rules.deltaTokens]])
+        )
+      ], else:[empty_state:Select_a_rule]))
+    ]),
+
+    // ------- Forge (Dev Mode) -------
+    section$forge:(grid[cols:320px_1fr_420px,g:3]:[
+      // Column 1: source pickers
+      forge$sources:(tabs:[
+        tab:Messages:(message_picker:onPick:actions.forge.addMessage),
+        tab:Memories:(memory_picker:onPick:actions.forge.addMemory),
+        tab:Profiles:(profile_picker:onPick:actions.forge.setProfile),
+        tab:Characters:(character_picker:onPick:actions.forge.setCharacter),
+        tab:Injections:(textarea:onSave:actions.forge.addInjection)
+      ]),
+      // Column 2: timeline builder
+      forge$timeline:(column[g:2]:[
+        sortable_list:forEach:state.forge.timeline:[chip(entry.label, onRemove:actions.forge.remove, drag:true)],
+        row:[button$secondary(onClick:actions.forge.clear):Clear, button$primary(onClick:actions.forge.compile):Compile_Preview]
+      ]),
+      // Column 3: preview + save
+      forge$preview:(column[g:2]:[
+        pre:state.preview.prompt,
+        row:[button$primary(onClick:actions.forge.saveSession):Save_Session,
+             button$secondary(onClick:actions.forge.createConversation):Save_as_Conversation]
+      ])
+    ])
+  ),
+
+  // ===== API (thin contract) =====
+  api:(
+    build:(counts:GET:/api/build/counts),
+    providers:(list:GET:/api/providers?cursor, byId:GET:/api/providers/:id,
+               ping:POST:/api/providers/:id/ping, update:PUT:/api/providers/:id),
+    models:(list:GET:/api/models?cursor&providerId&fav, byId:GET:/api/models/:id,
+            update:PUT:/api/models/:id, toggleFavorite:POST:/api/models/:id/favorite,
+            syncFromProvider:POST:/api/models/syncFromProvider),
+    characters:(list:GET:/api/characters?cursor&q, byId:GET:/api/characters/:id,
+                update:PUT:/api/characters/:id, update_json:PUT:/api/characters/:id/json),
+    profiles:(list:GET:/api/profiles?cursor, byId:GET:/api/profiles/:id,
+              create:POST:/api/profiles, update:PUT:/api/profiles/:id),
+    presets:(list:GET:/api/presets, byId:GET:/api/presets/:id,
+             create:POST:/api/presets, update:PUT:/api/presets/:id),
+    wrappers:(options:GET:/api/wrappers/options),
+    tones:(options:GET:/api/tones/options),
+    templates:(createConversation:POST:/api/templates/create-conversation),
+    rules:(list:GET:/api/rules, byId:GET:/api/rules/:id,
+           create:POST:/api/rules, update:PUT:/api/rules/:id,
+           test:POST:/api/rules/:id/test),
+    messages:(infinite:GET:/api/messages?cursor&role&rating&tag&q),
+    memories:(list:GET:/api/memories?characterId&q),
+    conversations:(options:GET:/api/conversations/options),
+    preview:(compile:POST:/api/preview/compile-context),
+    forge:(save:POST:/api/forge, createConversation:POST:/api/forge/create-conversation)
+  ),
+
+  // ===== Actions (hook to services) =====
+  actions:(
+    q:(providers:setQuery, characters:setQuery),
+    next:(providers:fetchNext, models:fetchNext, profiles:fetchNext),
+    providers:(update:api.providers.update, ping:api.providers.ping, delete:DEL:/api/providers/:id),
+    models:(filterByProvider:set(filter.providerId), update:api.models.update, toggleFavorite:api.models.toggleFavorite, syncFromProvider:api.models.syncFromProvider),
+    characters:(update:api.characters.update, update_json:api.characters.update_json),
+    profiles:(create:api.profiles.create, update:api.profiles.update),
+    presets:(create:api.presets.create, update:api.presets.update),
+    rules:(create:api.rules.create, update:api.rules.update, test:api.rules.test, testAgainstMessage:api.rules.test),
+    preview_context:api.preview.compile,
+    forge:(addMessage:push.timeline, addMemory:push.timeline, setProfile:set.timelineProfile, setCharacter:set.timelineCharacter,
+           addInjection:push.timeline, remove:remove.timelineItem, clear:clear.timeline,
+           compile:api.preview.compile, saveSession:api.forge.save, createConversation:api.forge.createConversation)
+  ),
+
+  // ===== Components (atoms) =====
+ components:(
+  // ===== Existing rows =====
+  provider_row:(row:[icon:cloud, column:[strong:item.name, small:item.type], spacer, small:item.base_url]),
+  model_row:(row:[strong:item.name, small:item.provider_name], badge:ctx:item.context_window, star:if:item.is_favorite),
+  character_row:(row:[avatar:item.name[0], column:[strong:item.name, small:truncate(item.description,60)]]),
+  profile_row:(row:[avatar:user, column:[strong:item.name, small:truncate(item.description,60)]]),
+  preset_row:(row:[strong:item.name, small:kv(temp:item.temperature, top_p:item.top_p, max:item.max_tokens)]),
+  rule_row:(row:[strong:item.name, small:item.rule_type, badge:item.scope]),
+
+  // ===== Inspector preview components =====
+  token_gauge:(column[g:1]:[
+    row:[small:"Token usage", spacer, small:concat(state.preview.tokens.used," / ",state.preview.tokens.max)],
+    meter:value:state.preview.tokens.used/max:state.preview.tokens.max
+  ]),
+
+  score_breakdown:(column[g:1]:[
+    h5:"Context scoring",
+    forEach:state.preview.rules:[
+      row:[small:item.name, spacer, badge:concat("×", round(item.weight,2))]]
+  ]),
+
+  pre_prompt:(card:(column[g:1]:[
+    row:[h5:"Compiled Prompt (preview)", spacer, small:concat(round(len(state.preview.prompt)/4), " est. tokens")],
+    pre[text:truncate(state.preview.prompt, 4000)]
+  ])),
+
+  // ===== Pickers / Lists (used in Forge & Rules tester) =====
+  message_row:(row[gap:2,p:2,hover:bg:muted,rounded:md]:[
+    badge:capitalize(item.role),
+    column:[strong:truncate(item.content,80), small:timeago(item.created_at)],
+    spacer,
+    row:[badge:if:item.rating:concat("★ ",item.rating), small:if:item.tags:join(item.tags,", ")]
+  ]),
+
+  memory_row:(row[gap:2,p:2,hover:bg:muted,rounded:md]:[
+    badge:item.category,
+    column:[strong:item.label, small:truncate(item.content,100)],
+    spacer,
+    badge:concat("w:", round(item.memory_weight,2))
+  ]),
+
+  // ===== Forge timeline chips =====
+  context_entry_chip:(chip[
+    label:entry.label,
+    icon:match(entry.type,{
+      "message":comment,
+      "memory":book,
+      "profile":user,
+      "character":sparkles,
+      "system":shield
+    }),
+    onRemove:actions.forge.remove
+  ]),
+
+  // ===== Minor helpers =====
+  SectionSkeleton:(column[g:2]:[
+    skeleton:line(w:60%),
+    skeleton:block(h:120),
+    skeleton:line(w:80%),
+    skeleton:block(h:160)
+  ])
+)
+
+)}
+```
