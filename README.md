@@ -1,18 +1,3 @@
-Ran tool
-Read file: /home/siah/builder/package.json
-Read file: /home/siah/builder/frontend/package.json
-Read file: /home/siah/builder/README.md
-Read file: /home/siah/builder/DATABASE_SETUP.md
-Read file: /home/siah/builder/prisma/schema.prisma
-Read file: /home/siah/builder/src/server.js
-Read file: /home/siah/builder/frontend/src/App.tsx
-Read file: /home/siah/builder/start.sh
-Read file: /home/siah/builder/frontend/src/components/Layout.tsx
-Read file: /home/siah/builder/frontend/src/components/LeftNav.tsx
-Read file: /home/siah/builder/frontend/src/context/AppContext.tsx
-Read file: /home/siah/builder/frontend/src/sections/ProvidersSection.tsx
-Read file: /home/siah/builder/frontend/src/sections/ModelsSection.tsx
-Read file: /home/siah/builder/frontend/src/sections/CharactersSection.tsx
 # Character Builder: AI Character & Conversation Management System
 
 [![Node.js](https://img.shields.io/badge/Node.js-v20-green.svg)](https://nodejs.org/)
