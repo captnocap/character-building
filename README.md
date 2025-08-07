@@ -67,8 +67,8 @@ Character Builder is a full-stack application for creating, managing, and intera
 
 ### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd builder
+git clone https://github.com/captnocap/character-building
+cd character-building
 ```
 
 ### 2. Database Setup
