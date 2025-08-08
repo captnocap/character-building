@@ -81,7 +81,7 @@ npm --version  # 8.x.x or higher
 
 ### Step 1: Repository Setup
 ```bash
-git clone <your-repository>
+git clone https://github.com/captnocap/character-building
 cd character-builder
 
 # Install root dependencies
