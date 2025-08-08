@@ -37,6 +37,14 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
+// GET /api/characters/options - Get characters as options for dropdowns
+router.get('/options', asyncHandler(async (req, res) => {
+  const result = await pool.query(
+    'SELECT id as value, name as label FROM characters ORDER BY name ASC'
+  );
+  res.json(result.rows);
+}));
+
 // GET /api/characters/:id - Get single character with memories
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;

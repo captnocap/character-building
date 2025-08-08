@@ -67,6 +67,18 @@ export interface BuildCounts {
   rules: number;
 }
 
+export interface Conversation {
+  id: string;
+  name: string;
+  user_profile_name?: string;
+  character_name?: string;
+  model_name?: string;
+  message_count: number;
+  updated_at: string;
+  is_synthetic: boolean;
+  messages?: any[];
+}
+
 export interface AppState {
   selection: {
     providerId?: string;
@@ -98,4 +110,5 @@ export interface AppState {
     }>;
   };
   counts: BuildCounts;
+  selectedConversation?: Conversation;
 }

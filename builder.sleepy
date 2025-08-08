@@ -1,15 +1,13 @@
-Here you go — **Builder** in SleepySyntax, with progressive disclosure, lazy sections, and a Forge mode. Drop-in scaffold; wire your services to the `api:` bits.
-
-```
+// character-builder.blueprint.sleepy
 {builder$app:(
-  meta:(name:Builder, version:v0.1),
+  meta:(name:Character_Builder, version:v1.0, owner:captnocap),
 
+  # =========================================
+  # LAYOUT
+  # =========================================
   layout:(
-    shell:(grid[cols:260px_1fr_380px, h:screen]:[
-      leftnav, 
-      mainpane, 
-      inspector
-    ]),
+    shell:(grid[cols:260px_1fr_380px, h:screen]:[leftnav, mainpane, inspector]),
+
     leftnav:(aside:(column[gap:2,p:3]:[
       h3:Builder,
       navlist:(column[gap:1]:[
@@ -20,19 +18,32 @@ Here you go — **Builder** in SleepySyntax, with progressive disclosure, lazy s
         navlink:/presets:Presets:badge:api.build.counts.presets,
         navlink:/templates:Templates:badge:api.build.counts.templates,
         divider,
+        navlink:/conversations:Conversations,
+        navlink:/messages:Messages,
+        navlink:/memories:Memories,
         navlink:/rules:Context_Rules:badge:api.build.counts.rules,
-        navlink:/forge:Forge_Mode
+        divider,
+        navlink:/context:Context_Compiler,
+        navlink:/forge:Forge_Mode,
+        navlink:/chat:Chat_Playground
       ])
     ])),
+
     mainpane:(router:routes),
+
     inspector:(aside:(column[p:3,gap:3,border-l:subtle]:[
-      button$primary(onClick:actions.preview_context):Preview_Context,
-      token_gauge:(row:[label:Tokens, meter:value:state.preview.tokens.used/max:state.preview.tokens.max]),
-      score_breakdown:forEach:state.preview.rules:[row:[small:item.name,badge:item.weight]],
-      pre_prompt:(pre[text:truncate(state.preview.prompt, 4000)])
+      h4:Inspector,
+      row:[button$primary(onClick:actions.preview_context):Preview_Context, 
+           small:if:state.preview.lastSaved:concat("• ",timeago(state.preview.lastSaved))],
+      token_gauge,
+      score_breakdown,
+      pre_prompt
     ]))
   ),
 
+  # =========================================
+  # ROUTES
+  # =========================================
   routes:(
     "/":welcome_empty,
     "/providers":section$providers,
@@ -41,298 +52,586 @@ Here you go — **Builder** in SleepySyntax, with progressive disclosure, lazy s
     "/profiles":section$profiles,
     "/presets":section$presets,
     "/templates":section$templates,
+    "/conversations":section$conversations,
+    "/messages":section$messages,
+    "/memories":section$memories,
     "/rules":section$rules,
-    "/forge":section$forge
+    "/context":section$context,
+    "/forge":section$forge,
+    "/chat":section$chat
   ),
 
+  # =========================================
+  # GLOBAL STATE
+  # =========================================
   state:(
-    selection:(providerId?, modelId?, characterId?, profileId?),
-    ui:(forgeEnabled:false, dirty:false),
-    preview:(prompt:"", tokens:(used:0,max:0), rules:[]),
-    forge:(timeline:[]) // ordered ContextEntry[]
+    selection:(providerId?, providerSlug?, modelId?, characterId?, profileId?, presetId?, ruleId?, conversationId?, messageId?),
+    filters:(
+      providers:(q:""),
+      models:(provider_id?, provider_slug?, fav:false),
+      characters:(search:"", limit:50, offset:0),
+      profiles:(search:"", limit:50, offset:0),
+      conversations:(limit:50, offset:0, user_profile_id?, character_id?, is_synthetic?),
+      messages:(limit:50, offset:0, role?, is_ghost?, rating?, tags?, search:""),
+      memories:(search:"", character_id?, category?, persistent?, limit:50, offset:0),
+      rules:(scope?, character_id?, conversation_id?)
+    ),
+    ui:(dirty:false, forgeEnabled:false),
+    preview:(prompt:"", tokens:(used:0,max:8000), rules:[], lastSaved:null),
+    forge:(timeline:[], sessionId?),
+    chat:(input:"", history:[], config:(modelId?, profileId?, characterId?, presetId?, useContext:true))
   ),
 
-  // ===== Sections =====
+  # =========================================
+  # SECTIONS
+  # =========================================
   sections:(
 
-    // ------- Providers -------
-    section$providers:(split[left:360px, right:auto]:[
-      // LEFT: list (lazy)
-      card$title:Providers_List:(column[gap:1]:[
-        search_input(placeholder:"Search providers", onInput:actions.q.providers),
-        list$providers:virtual(forEach:api.providers.list:[row$item(provider_row)]),
-        pager:onEnd:actions.next.providers
+    # -------- Providers --------
+    section$providers:(split[left:360px,right:auto]:[
+      card:Providers:(column[gap:2]:[
+        row:[input$search(value:filters.providers.q, placeholder:"Search (client-side)", onInput:actions.q.providers)],
+        list$providers:forEach:api.providers.list:[
+          row$item(provider_row, onClick:actions.select.provider)
+        ]
       ]),
-      // RIGHT: editor (lazy on select)
       panel$editor:(if:state.selection.providerId:[
-        provider_editor:(
-          basic:(column[g:2]:[
-            input:name(value:api.providers.byId.name, onBlur:actions.providers.update),
-            select:type(options:['openai','anthropic','custom_openai','local'], value:api.providers.byId.type, onChange:actions.providers.update),
-            input:base_url(value:api.providers.byId.base_url, onBlur:actions.providers.update),
-            input:api_key_ref(value:api.providers.byId.api_key_ref, onBlur:actions.providers.update)
-          ]),
-          actions:(row:[
-            button$secondary(onClick:actions.providers.ping):Ping,
-            button$danger(onClick:actions.providers.delete):Delete
-          ])
-        )
+        SectionSkeleton(if:!api.providers.byId),
+        provider_editor:(column[g:2]:[
+          input:name(value:api.providers.byId.name, onBlur:(v)->actions.providers.update({name:v})),
+          input:slug(value:api.providers.byId.slug, onBlur:(v)->actions.providers.update({slug:v})),
+          select:type(options:['openai','anthropic','custom_openai','local'], value:api.providers.byId.type, onChange:(v)->actions.providers.update({type:v})),
+          input:base_url(value:api.providers.byId.base_url, onBlur:(v)->actions.providers.update({base_url:v})),
+          input:api_key_ref(value:api.providers.byId.api_key_ref, onBlur:(v)->actions.providers.update({api_key_ref:v})),
+          row:[button$danger(onClick:actions.providers.delete):Delete]
+        ])
       ], else:[empty_state:Select_a_provider]))
     ]),
 
-    // ------- Models -------
+    # -------- Models --------
     section$models:(split[left:420px,right:auto]:[
-      card$title:Models:(column[g:2]:[
-        row:[select:provider(filter:api.providers.options, onChange:actions.models.filterByProvider),
+      card:Models:(column[g:2]:[
+        row:[select:Provider(options:api.providers.options, value:filters.models.provider_id, onChange:actions.models.filterByProviderId),
+             input:Provider_Slug(value:filters.models.provider_slug, onBlur:actions.models.filterByProviderSlug),
              checkbox:★_Favorites(checked:filters.models.fav, onChange:actions.models.toggleFav)],
-        list$models:virtual(forEach:api.models.list:[row$item(model_row)]),
-        pager:onEnd:actions.next.models
+        list$models:forEach:api.models.list:[row$item(model_row, onClick:actions.select.model)]
       ]),
       panel$editor:(if:state.selection.modelId:[
-        model_editor:(tabs:[
-          tab:Basics:(column[g:2]:[
-            text:provider(api.models.byId.provider_name),
-            input:nickname(value:api.models.byId.nickname, onBlur:actions.models.update),
-            number:context_window(value:api.models.byId.context_window, readOnly:true),
-            toggle:Favorite(checked:api.models.byId.is_favorite, onChange:actions.models.toggleFavorite)
-          ]),
-          tab:Advanced(collapsed:true):(
-            button$secondary(onClick:actions.models.syncFromProvider):Fetch_from_Provider
-          )
+        model_editor:(column[g:2]:[
+          text:provider(api.models.byId.provider_name),
+          input:nickname(value:api.models.byId.nickname, onBlur:(v)->actions.models.update({nickname:v})),
+          number:context_window(value:api.models.byId.context_window, readOnly:true),
+          number:context_window_override(value:api.models.byId.context_window_override, onBlur:(v)->actions.models.update({context_window_override:v})),
+          toggle:Favorite(checked:api.models.byId.is_favorite, onChange:(v)->actions.models.toggleFavorite(v))
         ])
       ], else:[empty_state:Select_a_model]))
     ]),
 
-    // ------- Characters -------
-    section$characters:(split[left:420px,right:auto]:[
+    # -------- Characters --------
+    section$characters:(split[left:440px,right:auto]:[
       card:Characters:(column[g:2]:[
-        search_input(placeholder:"Search characters", onInput:actions.q.characters),
-        list$characters:virtual(forEach:api.characters.list:[row$item(character_row)]),
-        pager:onEnd:actions.next.characters
+        row:[input:Search(value:filters.characters.search, onInput:actions.q.characters),
+             number:Limit(value:filters.characters.limit, onBlur:actions.characters.setLimit),
+             number:Offset(value:filters.characters.offset, onBlur:actions.characters.setOffset)],
+        list$characters:forEach:api.characters.list.characters:[row$item(character_row, onClick:actions.select.character)],
+        small:concat("Total: ", api.characters.list.total)
       ]),
       panel$editor:(if:state.selection.characterId:[
         character_editor:(tabs:[
           tab:Profile:(column[g:2]:[
-            input:name(value:api.characters.byId.name, onBlur:actions.characters.update),
-            select:format_type(options:['plain','markdown','json'], value:api.characters.byId.format_type, onChange:actions.characters.update),
-            textarea:description(value:api.characters.byId.description, rows:10, onBlur:actions.characters.update)
+            input:name(value:api.characters.byId.name, onBlur:(v)->actions.characters.update({name:v})),
+            select:format_type(options:['plain','markdown','json'], value:api.characters.byId.format_type, onChange:(v)->actions.characters.update({format_type:v})),
+            textarea:description(value:api.characters.byId.description, rows:12, onBlur:(v)->actions.characters.update({description:v}))
           ]),
           tab:Mood_Variants(collapsed:true):(
-            json_editor:value:api.characters.byId.mood_variants, onSave:actions.characters.update_json
+            json_editor:value:api.characters.byId.mood_variants, onSave:(v)->actions.characters.update({mood_variants:v})
           ),
           tab:Internal_State(collapsed:true):(
-            json_editor:value:api.characters.byId.internal_state, onSave:actions.characters.update_json
-          )
+            json_editor:value:api.characters.byId.internal_state, onSave:(v)->actions.characters.update({internal_state:v})
+          ),
+          tab:Memories:(column[g:2]:[
+            row:[button$secondary(onClick:actions.characters.loadMemories):Refresh_Memories,
+                 button$primary(onClick:actions.characters.addMemoryModal):Add_Memory],
+            list$mems:forEach:api.characters.memories:[row$item(memory_row)]
+          ])
         ])
       ], else:[empty_state:Select_a_character]))
     ]),
 
-    // ------- User Profiles -------
-    section$profiles:(split[left:420px,right:auto]:[
+    # -------- User Profiles --------
+    section$profiles:(split[left:440px,right:auto]:[
       card:User_Profiles:(column[g:2]:[
-        list$profiles:virtual(forEach:api.profiles.list:[row$item(profile_row)]),
-        pager:onEnd:actions.next.profiles,
-        button$primary(onClick:actions.profiles.create):New_Profile
+        row:[input:Search(value:filters.profiles.search, onInput:actions.q.profiles)],
+        list$profiles:forEach:api.profiles.list.profiles:[row$item(profile_row, onClick:actions.select.profile)],
+        row:[button$primary(onClick:actions.profiles.create):New_Profile]
       ]),
       panel$editor:(if:state.selection.profileId:[
         profile_editor:(column[g:2]:[
-          input:name(value:api.profiles.byId.name, onBlur:actions.profiles.update),
-          select:format_type(options:['plain','markdown','json'], value:api.profiles.byId.format_type, onChange:actions.profiles.update),
-          markdown_editor:value:api.profiles.byId.description, onSave:actions.profiles.update
+          input:name(value:api.profiles.byId.name, onBlur:(v)->actions.profiles.update({name:v})),
+          select:format_type(options:['plain','markdown','json'], value:api.profiles.byId.format_type, onChange:(v)->actions.profiles.update({format_type:v})),
+          markdown_editor:value:api.profiles.byId.description, onSave:(v)->actions.profiles.update({description:v})
         ])
       ], else:[empty_state:Select_a_profile]))
     ]),
 
-    // ------- Presets -------
+    # -------- Presets --------
     section$presets:(split[left:420px,right:auto]:[
       card:Presets:(column[g:2]:[
-        list$presets:forEach:api.presets.list:[row$item(preset_row)],
+        list$presets:forEach:api.presets.list:[row$item(preset_row, onClick:actions.select.preset)],
         button$primary(onClick:actions.presets.create):New_Preset
       ]),
-      panel$editor:(if:api.presets.activeId:[
+      panel$editor:(if:state.selection.presetId:[
         preset_editor:(accordion:[
           section:Basics:(grid[cols:2,g:2]:[
-            slider:temperature(min:0,max:2,step:0.01,value:api.presets.byId.temperature,onChange:actions.presets.update),
-            slider:top_p(min:0,max:1,step:0.01,value:api.presets.byId.top_p,onChange:actions.presets.update),
-            slider:top_k(min:0,max:200,value:api.presets.byId.top_k,onChange:actions.presets.update),
-            number:max_tokens(value:api.presets.byId.max_tokens,onBlur:actions.presets.update)
+            slider:temperature(min:0,max:2,step:0.01,value:api.presets.byId.temperature,onChange:(v)->actions.presets.update({temperature:v})),
+            slider:top_p(min:0,max:1,step:0.01,value:api.presets.byId.top_p,onChange:(v)->actions.presets.update({top_p:v})),
+            slider:top_k(min:0,max:200,value:api.presets.byId.top_k,onChange:(v)->actions.presets.update({top_k:v})),
+            number:max_tokens(value:api.presets.byId.max_tokens,onBlur:(v)->actions.presets.update({max_tokens:v}))
           ]),
           section:Penalties(collapsed:true):(
             grid[cols:2,g:2]:[
-              slider:frequency_penalty(min:-2,max:2,step:0.01,value:api.presets.byId.frequency_penalty,onChange:actions.presets.update),
-              slider:presence_penalty(min:-2,max:2,step:0.01,value:api.presets.byId.presence_penalty,onChange:actions.presets.update),
-              slider:repetition_penalty(min:0,max:2,step:0.01,value:api.presets.byId.repetition_penalty,onChange:actions.presets.update)
+              slider:frequency_penalty(min:-2,max:2,step:0.01,value:api.presets.byId.frequency_penalty,onChange:(v)->actions.presets.update({frequency_penalty:v})),
+              slider:presence_penalty(min:-2,max:2,step:0.01,value:api.presets.byId.presence_penalty,onChange:(v)->actions.presets.update({presence_penalty:v})),
+              slider:repetition_penalty(min:0,max:2,step:0.01,value:api.presets.byId.repetition_penalty,onChange:(v)->actions.presets.update({repetition_penalty:v})),
+              number:seed(value:api.presets.byId.seed, onBlur:(v)->actions.presets.update({seed:v}))
             ]
           )
         ])
       ], else:[empty_state:Select_a_preset]))
     ]),
 
-    // ------- Templates -------
-    section$templates:(wizard:[
-      step:Choose_Profile:(select:list:api.profiles.options, onSelect:actions.templates.pickProfile),
-      step:Choose_Character:(select:list:api.characters.options, onSelect:actions.templates.pickCharacter),
-      step:Choose_Model:(select:list:api.models.options, onSelect:actions.templates.pickModel),
-      step:Choose_Prompt_Wrapper:(select:list:api.wrappers.options, onSelect:actions.templates.pickWrapper),
-      step:Choose_Tone:(select:list:api.tones.options, onSelect:actions.templates.pickTone),
-      step:Choose_Preset:(select:list:api.presets.options, onSelect:actions.templates.pickPreset),
-      step:Review:(summary:[profile,character,model,wrapper,tone,preset], 
-                  actions:[button$primary(onClick:actions.templates.createConversation):Create_Conversation])
+    # -------- Templates (list + CRUD) --------
+    section$templates:(split[left:420px,right:auto]:[
+      card:Templates:(column[g:2]:[
+        list$templates:forEach:api.conversations.templatesList:[row:[
+          strong:item.name, small:concat(item.user_profile_name," • ",item.character_name," • ",item.model_name)
+        ]],
+        row:[button$primary(onClick:actions.templates.createConversation):New_From_Selections]
+      ]),
+      panel$editor:(column[g:2]:[
+        h5:"Selections",
+        select:Profile(options:api.profiles.options, value:state.selection.profileId, onChange:(v)->set(selection.profileId=v)),
+        select:Character(options:api.characters.options, value:state.selection.characterId, onChange:(v)->set(selection.characterId=v)),
+        select:Model(options:api.models.options, value:state.selection.modelId, onChange:(v)->set(selection.modelId=v)),
+        select:Preset(options:api.presets.options, value:state.selection.presetId, onChange:(v)->set(selection.presetId=v)),
+        button$primary(onClick:actions.templates.instantCreate):Create_Conversation
+      ])
     ]),
 
-    // ------- Rules -------
-    section$rules:(split[left:420px,right:auto]:[
+    # -------- Conversations --------
+    section$conversations:(split[left:460px,right:auto]:[
+      card:Conversations:(column[g:2]:[
+        row:[select:ProfileFilter(options:api.profiles.options,value:filters.conversations.user_profile_id,onChange:(v)->set(filters.conversations.user_profile_id=v)),
+             select:CharacterFilter(options:api.characters.options,value:filters.conversations.character_id,onChange:(v)->set(filters.conversations.character_id=v))],
+        list$convs:forEach:api.conversations.list.conversations:[row:[
+          column:[strong:item.name, small:concat("Msgs: ", item.message_count, " • Model: ", item.model_name)],
+          spacer,
+          button$ghost(onClick:()->set(selection.conversationId=item.id)):Edit
+        ]]
+      ]),
+      panel$editor:(if:state.selection.conversationId:[
+        conv_editor:(column[g:2]:[
+          pre:(small:"Conversation info", text:json(api.conversations.byId)),
+          row:[button$secondary(onClick:actions.conversations.loadMessages):Load_Messages,
+               button$primary(onClick:actions.conversations.addMessage):Add_Message],
+          list$msgs:forEach:api.conversations.byId.messages:[row:item(message_row)]
+        ])
+      ], else:[empty_state:Select_a_conversation]))
+    ]),
+
+    # -------- Messages --------
+    section$messages:(split[left:520px,right:auto]:[
+      card:Messages:(column[g:2]:[
+        grid[cols:5,g:2]:[
+          select:Role(options:['user','assistant','system','tool',''], value:filters.messages.role, onChange:(v)->set(filters.messages.role=v)),
+          checkbox:Ghost(checked:filters.messages.is_ghost, onChange:(v)->set(filters.messages.is_ghost=v)),
+          number:Min_Rating(value:filters.messages.rating, onBlur:(v)->set(filters.messages.rating=v)),
+          input:TagsCSV(value:filters.messages.tags, onBlur:(v)->set(filters.messages.tags=v)),
+          input:Search(value:filters.messages.search, onInput:(v)->set(filters.messages.search=v))
+        ],
+        list$messages:forEach:api.messages.list.messages:[row:item(message_row, onClick:()->set(selection.messageId=item.id))],
+        row:[button$secondary(onClick:actions.messages.rate5):★_Rate_5, button$secondary(onClick:actions.messages.tagHelpful):+_Tag_helpful]
+      ]),
+      panel$editor:(if:state.selection.messageId:[
+        msg_editor:(column[g:2]:[
+          pre:json(api.messages.byId),
+          row:[button$secondary(onClick:actions.messages.toGhost):Make_Ghost,
+               button$danger(onClick:actions.messages.delete):Delete]
+        ])
+      ], else:[empty_state:Select_a_message]))
+    ]),
+
+    # -------- Memories --------
+    section$memories:(split[left:480px,right:auto]:[
+      card:Memories:(column[g:2]:[
+        grid[cols:5,g:2]:[
+          input:Search(value:filters.memories.search, onInput:(v)->set(filters.memories.search=v)),
+          select:Character(options:api.characters.options, value:filters.memories.character_id, onChange:(v)->set(filters.memories.character_id=v)),
+          input:Category(value:filters.memories.category, onBlur:(v)->set(filters.memories.category=v)),
+          select:Persistent(options:[('any',''),('true','true'),('false','false')], value:filters.memories.persistent, onChange:(v)->set(filters.memories.persistent=v)),
+          number:Min_Weight(value:"0.3", readOnly:true)
+        ],
+        list$mem:forEach:api.memories.list:[row:item(memory_row)],
+        row:[button$danger(onClick:actions.memories.cleanup):Cleanup_Low_Weight]
+      ]),
+      panel$editor:(column[g:2]:[
+        h5:"Bulk Create",
+        button$secondary(onClick:actions.memories.bulkSeed):Seed_Demo
+      ])
+    ]),
+
+    # -------- Rules --------
+    section$rules:(split[left:440px,right:auto]:[
       card:Rules:(column[g:2]:[
-        list$rules:forEach:api.rules.list:[row$item(rule_row)],
+        list$rules:forEach:api.rules.list:[row:item(rule_row, onClick:actions.select.rule)],
         button$primary(onClick:actions.rules.create):New_Rule
       ]),
-      panel$editor:(if:api.rules.activeId:[
+      panel$editor:(if:state.selection.ruleId:[
         rule_editor:(grid[cols:2,g:2]:[
-          select:rule_type(options:['recency','relevance','rating','recall_frequency','tag_based'], value:api.rules.byId.rule_type, onChange:actions.rules.update),
-          slider:weight(min:0,max:5,step:0.1,value:api.rules.byId.weight,onChange:actions.rules.update),
-          select:scope(options:['global','character','conversation'], value:api.rules.byId.scope, onChange:actions.rules.update),
-          select:character(optional:true, options:api.characters.options, value:api.rules.byId.character_id, onChange:actions.rules.update),
-          select:conversation(optional:true, options:api.conversations.options, value:api.rules.byId.conversation_id, onChange:actions.rules.update),
-          json_editor:parameters:value:api.rules.byId.parameters,onSave:actions.rules.update
+          input:Name(value:api.rules.byId.name, onBlur:(v)->actions.rules.update({name:v})),
+          select:Type(options:['recency','relevance','rating','recall_frequency','tag_based'], value:api.rules.byId.rule_type, onChange:(v)->actions.rules.update({rule_type:v})),
+          number:Weight(value:api.rules.byId.weight, onBlur:(v)->actions.rules.update({weight:v})),
+          select:Scope(options:['global','character','conversation'], value:api.rules.byId.scope, onChange:(v)->actions.rules.update({scope:v})),
+          select:Character(options:api.characters.options, value:api.rules.byId.character_id, onChange:(v)->actions.rules.update({character_id:v})),
+          select:Conversation(options:api.conversations.list.conversations.map(c=>({id:c.id,name:c.name})), value:api.rules.byId.conversation_id, onChange:(v)->actions.rules.update({conversation_id:v})),
+          json_editor:value:api.rules.byId.parameters, onSave:(v)->actions.rules.update({parameters:v})
         ]),
         tester:(column[g:2,border-t:subtle,pt:3,mt:3]:[
-          h4:Test_Against_Message_History,
-          message_picker:onPick:actions.rules.testAgainstMessage,
-          results:(column:[pre:state.rules.testResult, meter:state.rules.deltaTokens]])
-        )
+          h4:Test_Against_Message_Text,
+          textarea:onSave:(txt)->actions.rules.test(txt),
+          pre:state.rules?.testResult
+        ])
       ], else:[empty_state:Select_a_rule]))
     ]),
 
-    // ------- Forge (Dev Mode) -------
+    # -------- Context Compiler --------
+    section$context:(column[g:2]:[
+      h4:"Compile / Preview",
+      row:[select:Conversation(options:api.conversations.list.conversations.map(c=>({id:c.id,name:c.name})), value:selection.conversationId, onChange:(v)->set(selection.conversationId=v)),
+           input:User_Input(value:state.contextUserInput, onInput:(v)->set(contextUserInput=v)),
+           number:Max_Tokens(value:state.preview.tokens.max, onBlur:(v)->set(preview.tokens.max=v)),
+           button$primary(onClick:actions.preview_context):Preview],
+      card:(pre:json(api.context.preview))
+    ]),
+
+    # -------- Forge --------
     section$forge:(grid[cols:320px_1fr_420px,g:3]:[
-      // Column 1: source pickers
       forge$sources:(tabs:[
-        tab:Messages:(message_picker:onPick:actions.forge.addMessage),
-        tab:Memories:(memory_picker:onPick:actions.forge.addMemory),
-        tab:Profiles:(profile_picker:onPick:actions.forge.setProfile),
-        tab:Characters:(character_picker:onPick:actions.forge.setCharacter),
-        tab:Injections:(textarea:onSave:actions.forge.addInjection)
+        tab:Messages:(column:[list:forEach:api.messages.list.messages:[row:item(message_row, onClick:actions.forge.addMessage)]]),
+        tab:Memories:(column:[list:forEach:api.memories.list:[row:item(memory_row, onClick:actions.forge.addMemory)]]),
+        tab:Profiles:(column:[list:forEach:api.profiles.list.profiles:[row:item(profile_row, onClick:()->set(selection.profileId=item.id))]]),
+        tab:Characters:(column:[list:forEach:api.characters.list.characters:[row:item(character_row, onClick:()->set(selection.characterId=item.id))]])
       ]),
-      // Column 2: timeline builder
       forge$timeline:(column[g:2]:[
-        sortable_list:forEach:state.forge.timeline:[chip(entry.label, onRemove:actions.forge.remove, drag:true)],
-        row:[button$secondary(onClick:actions.forge.clear):Clear, button$primary(onClick:actions.forge.compile):Compile_Preview]
+        sortable_list:forEach:state.forge.timeline:[context_entry_chip],
+        row:[button$secondary(onClick:actions.forge.clear):Clear, 
+             button$primary(onClick:actions.forge.compile):Compile_Preview,
+             button$primary(onClick:actions.forge.saveSession):Save_Session,
+             button$primary(onClick:actions.forge.createConversation):Save_as_Conversation]
       ]),
-      // Column 3: preview + save
       forge$preview:(column[g:2]:[
-        pre:state.preview.prompt,
-        row:[button$primary(onClick:actions.forge.saveSession):Save_Session,
-             button$secondary(onClick:actions.forge.createConversation):Save_as_Conversation]
+        pre:state.preview.prompt
       ])
+    ]),
+
+    # -------- Chat Playground --------
+    section$chat:(column[g:2]:[
+      h4:"Chat",
+      grid[cols:4,g:2]:[
+        select:Model(options:api.models.options, value:chat.config.modelId, onChange:(v)->set(chat.config.modelId=v)),
+        select:Character(options:api.characters.options, value:chat.config.characterId, onChange:(v)->set(chat.config.characterId=v)),
+        select:Profile(options:api.profiles.options, value:chat.config.profileId, onChange:(v)->set(chat.config.profileId=v)),
+        select:Preset(options:api.presets.options, value:chat.config.presetId, onChange:(v)->set(chat.config.presetId=v))
+      ],
+      toggle:Use_Context(checked:chat.config.useContext, onChange:(v)->set(chat.config.useContext=v)),
+      list$history:forEach:state.chat.history:[row:item(message_row)],
+      row:[textarea(value:chat.input, onInput:(v)->set(chat.input=v)), button$primary(onClick:actions.chat.send):Send]
     ])
   ),
 
-  // ===== API (thin contract) =====
+  # =========================================
+  # API MAP (EXACT ENDPOINTS)
+  # =========================================
   api:(
     build:(counts:GET:/api/build/counts),
-    providers:(list:GET:/api/providers?cursor, byId:GET:/api/providers/:id,
-               ping:POST:/api/providers/:id/ping, update:PUT:/api/providers/:id),
-    models:(list:GET:/api/models?cursor&providerId&fav, byId:GET:/api/models/:id,
-            update:PUT:/api/models/:id, toggleFavorite:POST:/api/models/:id/favorite,
-            syncFromProvider:POST:/api/models/syncFromProvider),
-    characters:(list:GET:/api/characters?cursor&q, byId:GET:/api/characters/:id,
-                update:PUT:/api/characters/:id, update_json:PUT:/api/characters/:id/json),
-    profiles:(list:GET:/api/profiles?cursor, byId:GET:/api/profiles/:id,
-              create:POST:/api/profiles, update:PUT:/api/profiles/:id),
-    presets:(list:GET:/api/presets, byId:GET:/api/presets/:id,
-             create:POST:/api/presets, update:PUT:/api/presets/:id),
-    wrappers:(options:GET:/api/wrappers/options),
-    tones:(options:GET:/api/tones/options),
-    templates:(createConversation:POST:/api/templates/create-conversation),
-    rules:(list:GET:/api/rules, byId:GET:/api/rules/:id,
-           create:POST:/api/rules, update:PUT:/api/rules/:id,
+
+    providers:(list:GET:/api/providers,
+               options:GET:/api/providers/options,
+               byId:GET:/api/providers/:identifier,
+               update:PUT:/api/providers/:identifier,
+               delete:DELETE:/api/providers/:identifier),
+
+    models:(list:GET:/api/models?provider_id&provider_slug&is_favorite,
+            options:GET:/api/models/options,
+            byId:GET:/api/models/:id,
+            update:PUT:/api/models/:id,
+            toggleFavorite:PUT:/api/models/:id/favorite),
+
+    characters:(list:GET:/api/characters?limit&offset&search,
+                options:GET:/api/characters/options,
+                byId:GET:/api/characters/:id?include_memories,
+                update:PUT:/api/characters/:id,
+                addMemory:POST:/api/characters/:id/memories,
+                listMemories:GET:/api/characters/:id/memories),
+
+    profiles:(list:GET:/api/user-profiles?limit&offset&search,
+              options:GET:/api/user-profiles/options,
+              byId:GET:/api/user-profiles/:id,
+              create:POST:/api/user-profiles,
+              update:PUT:/api/user-profiles/:id),
+
+    presets:(list:GET:/api/inference-presets,
+             options:GET:/api/inference-presets/options,
+             byId:GET:/api/inference-presets/:id,
+             create:POST:/api/inference-presets,
+             update:PUT:/api/inference-presets/:id),
+
+    conversations:(list:GET:/api/conversations?limit&offset&user_profile_id&character_id&is_synthetic,
+                   byId:GET:/api/conversations/:id?include_messages&message_limit,
+                   create:POST:/api/conversations,
+                   update:PUT:/api/conversations/:id,
+                   delete:DELETE:/api/conversations/:id,
+                   templatesList:GET:/api/conversations/templates,
+                   templatesCreate:POST:/api/conversations/templates,
+                   templatesUpdate:PUT:/api/conversations/templates/:id,
+                   templatesDelete:DELETE:/api/conversations/templates/:id,
+                   addMessage:POST:/api/conversations/:id/messages,
+                   updateMessageContext:PUT:/api/conversations/:id/messages/:messageId/context,
+                   fork:POST:/api/conversations/:id/fork,
+                   chat:POST:/api/conversations/chat),
+
+    messages:(list:GET:/api/messages?limit&offset&role&is_ghost&rating&tags&search,
+              byId:GET:/api/messages/:id,
+              create:POST:/api/messages,
+              update:PUT:/api/messages/:id,
+              rate:PUT:/api/messages/:id/rating,
+              tags:PUT:/api/messages/:id/tags,
+              usage:PUT:/api/messages/:id/usage,
+              toGhost:POST:/api/messages/:id/ghost,
+              search:GET:/api/messages/search?query&limit&offset&role&min_rating&tags&similar_to),
+
+    memories:(list:GET:/api/memories?search&character_id&category&persistent&limit&offset,
+              bulkCreate:POST:/api/memories/bulk,
+              cleanup:DELETE:/api/memories/cleanup),
+
+    rules:(list:GET:/api/rules,
+           byId:GET:/api/rules/:id,
+           create:POST:/api/rules,
+           update:PUT:/api/rules/:id,
+           delete:DELETE:/api/rules/:id,
            test:POST:/api/rules/:id/test),
-    messages:(infinite:GET:/api/messages?cursor&role&rating&tag&q),
-    memories:(list:GET:/api/memories?characterId&q),
-    conversations:(options:GET:/api/conversations/options),
-    preview:(compile:POST:/api/preview/compile-context),
-    forge:(save:POST:/api/forge, createConversation:POST:/api/forge/create-conversation)
+
+    context:(compile:POST:/api/context/compile,
+             preview:POST:/api/context/preview,
+             getRules:GET:/api/context/rules?scope&character_id&conversation_id,
+             upsertRules:PUT:/api/context/rules,
+             detectIntent:POST:/api/context/intent,
+             semanticSearch:POST:/api/context/semantic-search),
+
+    forge:(createSession:POST:/api/forge/session,
+           listSessions:GET:/api/forge/sessions?limit&offset&character_id&user_profile_id,
+           getSession:GET:/api/forge/sessions/:id,
+           continueSession:POST:/api/forge/sessions/:id/continue,
+           ghostResponse:POST:/api/forge/ghost-response,
+           ghostLog:POST:/api/forge/ghost-log,
+           listGhostLogs:GET:/api/forge/ghost-logs/:characterId?limit&offset,
+           createTimeline:POST:/api/forge/timeline)
   ),
 
-  // ===== Actions (hook to services) =====
+  # =========================================
+  # ACTIONS (WIRED TO BACKEND PARAMS)
+  # =========================================
   actions:(
-    q:(providers:setQuery, characters:setQuery),
-    next:(providers:fetchNext, models:fetchNext, profiles:fetchNext),
-    providers:(update:api.providers.update, ping:api.providers.ping, delete:DEL:/api/providers/:id),
-    models:(filterByProvider:set(filter.providerId), update:api.models.update, toggleFavorite:api.models.toggleFavorite, syncFromProvider:api.models.syncFromProvider),
-    characters:(update:api.characters.update, update_json:api.characters.update_json),
-    profiles:(create:api.profiles.create, update:api.profiles.update),
-    presets:(create:api.presets.create, update:api.presets.update),
-    rules:(create:api.rules.create, update:api.rules.update, test:api.rules.test, testAgainstMessage:api.rules.test),
-    preview_context:api.preview.compile,
-    forge:(addMessage:push.timeline, addMemory:push.timeline, setProfile:set.timelineProfile, setCharacter:set.timelineCharacter,
-           addInjection:push.timeline, remove:remove.timelineItem, clear:clear.timeline,
-           compile:api.preview.compile, saveSession:api.forge.save, createConversation:api.forge.createConversation)
+    # Selection
+    select:(provider:(item)->set(selection.providerId=item.id, selection.providerSlug=item.slug),
+            model:(item)->set(selection.modelId=item.id),
+            character:(item)->set(selection.characterId=item.id),
+            profile:(item)->set(selection.profileId=item.id),
+            preset:(item)->set(selection.presetId=item.id),
+            rule:(item)->set(selection.ruleId=item.id),
+            conversation:(item)->set(selection.conversationId=item.id),
+            message:(item)->set(selection.messageId=item.id)),
+
+    # Queries / filters
+    q:(providers:set(filters.providers.q=$value),
+       characters:set(filters.characters.search=$value),
+       profiles:set(filters.profiles.search=$value)),
+    # (If you implement paging helpers, wire nextPage here)
+
+    # Providers
+    providers:(update:(payload)->api.providers.update({ identifier: selection.providerSlug || selection.providerId, ...payload }),
+               delete:()->api.providers.delete({ identifier: selection.providerSlug || selection.providerId })),
+
+    # Models
+    models:(filterByProviderId:(v)->set(filters.models.provider_id=v, filters.models.provider_slug=null),
+            filterByProviderSlug:(v)->set(filters.models.provider_slug=v, filters.models.provider_id=null),
+            toggleFav:()->set(filters.models.fav = !filters.models.fav),
+            update:(payload)->api.models.update({ id: selection.modelId, ...payload }),
+            toggleFavorite:(val)->api.models.toggleFavorite({ id: selection.modelId, is_favorite: val })),
+
+    # Characters
+    characters:(setLimit:(v)->set(filters.characters.limit=v),
+                setOffset:(v)->set(filters.characters.offset=v),
+                update:(payload)->api.characters.update({ id: selection.characterId, ...payload }),
+                loadMemories:()->api.characters.listMemories({ id: selection.characterId }),
+                addMemoryModal:()->modal.open('AddMemory', { characterId: selection.characterId })),
+
+    # Profiles
+    profiles:(create:()->api.profiles.create({ name:"New Profile", description:"", format_type:"plain" }),
+              update:(payload)->api.profiles.update({ id: selection.profileId, ...payload })),
+
+    # Presets
+    presets:(create:()->api.presets.create({ name:"New Preset", temperature:0.7, top_p:0.9, max_tokens:1000 }),
+             update:(payload)->api.presets.update({ id: selection.presetId, ...payload })),
+
+    # Conversations
+    conversations:(loadMessages:()->api.conversations.byId({ id: selection.conversationId, include_messages:"true", message_limit:200 }),
+                   addMessage:()->api.conversations.addMessage({ id: selection.conversationId, role:"user", content:"Hello from Builder" })),
+
+    # Messages
+    messages:(rate5:()->api.messages.rate({ id: selection.messageId, rating:5 }),
+              tagHelpful:()->api.messages.tags({ id: selection.messageId, tags:['helpful'], action:'add' }),
+              toGhost:()->api.messages.toGhost({ id: selection.messageId }),
+              delete:()->api.messages.update({ id: selection.messageId, content:"" })),  # or implement a delete endpoint use-case
+
+    # Memories
+    memories:(bulkSeed:()->api.memories.bulkCreate({
+                character_id: selection.characterId,
+                memories:[
+                  {label:"Met user",content:"We met at the dojo",category:"relationship",persistent:true,memory_weight:0.9},
+                  {label:"Warned about AI",content:"Told everyone not to trust AI logs",category:"warnings",persistent:true,memory_weight:1.0}
+                ]
+              }),
+              cleanup:()->api.memories.cleanup({ character_id: selection.characterId, min_weight:0.3, keep_persistent:true })),
+
+    # Rules
+    rules:(create:()->api.rules.create({ name:"Recency Boost", rule_type:"recency", weight:1.2, scope:"global", active:true }),
+           update:(payload)->api.rules.update({ id: selection.ruleId, ...payload }),
+           test:(txt)->{
+             let r = api.rules.test({ id: selection.ruleId, test_data: txt });
+             set(state.rules.testResult = r);
+           }),
+
+    # Context Compiler
+    preview_context:(fn:->{
+      if (!selection.conversationId) { return toast.warn("Pick a conversation"); }
+      let res = api.context.preview({
+        conversation_id: selection.conversationId,
+        user_input: state.contextUserInput || "",
+        max_tokens: state.preview.tokens.max || 8000
+      });
+      set(preview.prompt = res.compiled);
+      set(preview.tokens.used = res.token_estimate);
+      set(preview.rules = res.context_rules_applied || []);
+      set(preview.lastSaved = now());
+    }),
+
+    # Forge
+    forge:(addMessage:(item)->push(forge.timeline, {type:'message',label:truncate(item.content,64),id:item.id,role:item.role,content:item.content}),
+           addMemory:(item)->push(forge.timeline, {type:'memory',label:item.label,id:item.id,content:item.content}),
+           remove:(index)->removeAt(forge.timeline, index),
+           clear:()->set(forge.timeline=[]),
+           compile:(fn:->{
+             # For now reuse context.preview to visualize; advanced: call /forge/session for a dry run
+             let res = api.context.preview({
+               conversation_id: selection.conversationId,
+               user_input: '',
+               max_tokens: 8000
+             });
+             set(preview.prompt = res.compiled);
+             set(preview.tokens.used = res.token_estimate);
+             set(preview.tokens.max = 8000);
+             set(preview.rules = res.context_rules_applied || []);
+           }),
+           saveSession:(body)->api.forge.createSession({
+             name: body?.name || 'Forge Session',
+             user_profile_id: selection.profileId,
+             character_id: selection.characterId,
+             source_messages: forge.timeline.filter(t=>t.type=='message').map(t=>t.id),
+             source_memories: forge.timeline.filter(t=>t.type=='memory').map(t=>t.id),
+             metadata:{ from_builder:true }
+           }),
+           createConversation:(body)->api.forge.createTimeline({
+             name: body?.name || 'Forge Timeline',
+             character_id: selection.characterId,
+             user_profile_id: selection.profileId,
+             timeline_entries: forge.timeline.map((t,i)=>({ ...t, index:i })),
+             create_conversation:true
+           })),
+
+    # Chat
+    chat:(send:(fn:->{
+      if (!chat.config.modelId) { return toast.error("Pick a model"); }
+      let res = api.conversations.chat({
+        message: chat.input,
+        config:{
+          modelId: chat.config.modelId,
+          presetId: chat.config.presetId,
+          characterId: chat.config.characterId,
+          profileId: chat.config.profileId,
+          useContext: chat.config.useContext
+        },
+        messageHistory: state.chat.history.map(h=>({ role:h.role, content:h.content }))
+      });
+      push(state.chat.history, { role:'user', content: chat.input });
+      push(state.chat.history, { role:'assistant', content: res.response });
+      set(chat.input = "");
+      if (res.contextInfo?.compiledPrompt) {
+        set(preview.prompt = res.contextInfo.compiledPrompt);
+        set(preview.tokens.used = Math.round(res.contextInfo.tokens.used));
+        set(preview.tokens.max = res.contextInfo.tokens.max);
+        set(preview.rules = res.contextInfo.rules || []);
+      }
+    })))
   ),
 
-  // ===== Components (atoms) =====
- components:(
-  // ===== Existing rows =====
-  provider_row:(row:[icon:cloud, column:[strong:item.name, small:item.type], spacer, small:item.base_url]),
-  model_row:(row:[strong:item.name, small:item.provider_name], badge:ctx:item.context_window, star:if:item.is_favorite),
-  character_row:(row:[avatar:item.name[0], column:[strong:item.name, small:truncate(item.description,60)]]),
-  profile_row:(row:[avatar:user, column:[strong:item.name, small:truncate(item.description,60)]]),
-  preset_row:(row:[strong:item.name, small:kv(temp:item.temperature, top_p:item.top_p, max:item.max_tokens)]),
-  rule_row:(row:[strong:item.name, small:item.rule_type, badge:item.scope]),
+  # =========================================
+  # COMPONENTS
+  # =========================================
+  components:(
+    # Rows
+    provider_row:(row:[icon:cloud, column:[strong:item.name, small:item.type], spacer, small:item.base_url || item.slug]),
+    model_row:(row:[strong:item.name, small:item.provider_name], badge:ctx:item.context_window, star:if:item.is_favorite),
+    character_row:(row:[avatar:item.name[0], column:[strong:item.name, small:truncate(item.description||'',60)]]),
+    profile_row:(row:[avatar:user, column:[strong:item.name, small:truncate(item.description||'',60)]]),
+    preset_row:(row:[strong:item.name, small:kv(temp:item.temperature, top_p:item.top_p, max:item.max_tokens)]),
+    rule_row:(row:[strong:item.name, small:item.rule_type, badge:item.scope]),
+    message_row:(row[gap:2,p:2,hover:bg:muted,rounded:md]:[
+      badge:capitalize(item.role),
+      column:[strong:truncate(item.content||'',90), small:timeago(item.created_at)],
+      spacer,
+      row:[badge:if:item.rating:concat("★ ",item.rating), small:if:item.tags:join(item.tags,", ")]
+    ]),
+    memory_row:(row[gap:2,p:2,hover:bg:muted,rounded:md]:[
+      badge:item.category || 'memory',
+      column:[strong:item.label, small:truncate(item.content||'',100)],
+      spacer,
+      badge:concat("w:", round(item.memory_weight||1,2))
+    ]),
 
-  // ===== Inspector preview components =====
-  token_gauge:(column[g:1]:[
-    row:[small:"Token usage", spacer, small:concat(state.preview.tokens.used," / ",state.preview.tokens.max)],
-    meter:value:state.preview.tokens.used/max:state.preview.tokens.max
-  ]),
+    # Inspector Preview
+    token_gauge:(column[g:1]:[
+      row:[small:"Token usage", spacer, small:concat(state.preview.tokens.used," / ",state.preview.tokens.max)],
+      meter:value:state.preview.tokens.used/max:state.preview.tokens.max
+    ]),
+    score_breakdown:(column[g:1]:[
+      h5:"Context scoring",
+      forEach:state.preview.rules:[row:[small:item.name || 'rule', spacer, badge:concat("×", round(item.weight||1,2))]]
+    ]),
+    pre_prompt:(card:(column[g:1]:[
+      row:[h5:"Compiled Prompt (preview)", spacer, small:concat(round(len(state.preview.prompt)/4), " est. tokens")],
+      pre[text:truncate(state.preview.prompt, 4000)]
+    ])),
 
-  score_breakdown:(column[g:1]:[
-    h5:"Context scoring",
-    forEach:state.preview.rules:[
-      row:[small:item.name, spacer, badge:concat("×", round(item.weight,2))]]
-  ]),
+    # Forge chip
+    context_entry_chip:(chip[
+      label:entry.label,
+      icon:match(entry.type,{"message":comment,"memory":book,"profile":user,"character":sparkles,"system":shield}),
+      onRemove:actions.forge.remove
+    ]),
 
-  pre_prompt:(card:(column[g:1]:[
-    row:[h5:"Compiled Prompt (preview)", spacer, small:concat(round(len(state.preview.prompt)/4), " est. tokens")],
-    pre[text:truncate(state.preview.prompt, 4000)]
-  ])),
-
-  // ===== Pickers / Lists (used in Forge & Rules tester) =====
-  message_row:(row[gap:2,p:2,hover:bg:muted,rounded:md]:[
-    badge:capitalize(item.role),
-    column:[strong:truncate(item.content,80), small:timeago(item.created_at)],
-    spacer,
-    row:[badge:if:item.rating:concat("★ ",item.rating), small:if:item.tags:join(item.tags,", ")]
-  ]),
-
-  memory_row:(row[gap:2,p:2,hover:bg:muted,rounded:md]:[
-    badge:item.category,
-    column:[strong:item.label, small:truncate(item.content,100)],
-    spacer,
-    badge:concat("w:", round(item.memory_weight,2))
-  ]),
-
-  // ===== Forge timeline chips =====
-  context_entry_chip:(chip[
-    label:entry.label,
-    icon:match(entry.type,{
-      "message":comment,
-      "memory":book,
-      "profile":user,
-      "character":sparkles,
-      "system":shield
-    }),
-    onRemove:actions.forge.remove
-  ]),
-
-  // ===== Minor helpers =====
-  SectionSkeleton:(column[g:2]:[
-    skeleton:line(w:60%),
-    skeleton:block(h:120),
-    skeleton:line(w:80%),
-    skeleton:block(h:160)
-  ])
-)
-
+    # Skeleton + welcome
+    SectionSkeleton:(column[g:2]:[skeleton:line(w:60%), skeleton:block(h:120), skeleton:line(w:80%), skeleton:block(h:160)]),
+    welcome_empty:(centered:(column[g:2]:[h2:"Welcome to Character Builder", p:"Pick a section on the left to get started."]))
+  )
 )}
-```

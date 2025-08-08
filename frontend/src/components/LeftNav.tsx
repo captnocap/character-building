@@ -48,12 +48,16 @@ export default function LeftNav() {
         
         <div className="border-t border-gray-200 my-2"></div>
         
+        <NavLink to="/conversations" label="Conversations" />
+        <NavLink to="/messages" label="Messages" />
+        <NavLink to="/memories" label="Memories" />
         <NavLink to="/rules" label="Context Rules" badge={state.counts.rules} />
-        <NavLink to="/forge" label="Forge Mode" />
         
         <div className="border-t border-gray-200 my-2"></div>
         
-        <NavLink to="/conversation" label="Conversation" />
+        <NavLink to="/context" label="Context Compiler" />
+        <NavLink to="/forge" label="Forge Mode" />
+        <NavLink to="/chat" label="Chat Playground" />
       </nav>
     </aside>
   );

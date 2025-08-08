@@ -12,6 +12,11 @@ import TemplatesSection from '../sections/TemplatesSection';
 import RulesSection from '../sections/RulesSection';
 import ForgeSection from '../sections/ForgeSection';
 import ConversationSection from '../sections/ConversationSection';
+import ConversationsSection from '../sections/ConversationsSection';
+import MessagesSection from '../sections/MessagesSection';
+import MemoriesSection from '../sections/MemoriesSection';
+import ContextSection from '../sections/ContextSection';
+import ChatSection from '../sections/ChatSection';
 
 export default function Layout() {
   return (
@@ -32,6 +37,11 @@ export default function Layout() {
           <Route path="/rules" element={<RulesSection />} />
           <Route path="/forge" element={<ForgeSection />} />
           <Route path="/conversation" element={<ConversationSection />} />
+          <Route path="/conversations" element={<ConversationsSection />} />
+          <Route path="/messages" element={<MessagesSection />} />
+          <Route path="/memories" element={<MemoriesSection />} />
+          <Route path="/context" element={<ContextSection />} />
+          <Route path="/chat" element={<ChatSection />} />
         </Routes>
       </main>
       

@@ -12,6 +12,14 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(result.rows);
 }));
 
+// GET /api/inference-presets/options - Get presets as options for dropdowns
+router.get('/options', asyncHandler(async (req, res) => {
+  const result = await pool.query(
+    'SELECT id as value, name as label FROM inference_presets ORDER BY name ASC'
+  );
+  res.json(result.rows);
+}));
+
 // GET /api/inference-presets/:id - Get single preset
 router.get('/:id', asyncHandler(async (req, res) => {
   const result = await pool.query(

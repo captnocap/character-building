@@ -37,6 +37,29 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(result.rows);
 }));
 
+// GET /api/models/options - Get models as options for dropdowns
+router.get('/options', asyncHandler(async (req, res) => {
+  const { provider_id } = req.query;
+  
+  let query = `
+    SELECT m.id as value, 
+           CONCAT(p.name, ' / ', m.name) as label
+    FROM models m
+    JOIN providers p ON m.provider_id = p.id
+  `;
+  const values = [];
+  
+  if (provider_id) {
+    values.push(provider_id);
+    query += ` WHERE m.provider_id = $${values.length}`;
+  }
+  
+  query += ' ORDER BY p.name ASC, m.name ASC';
+  
+  const result = await pool.query(query, values);
+  res.json(result.rows);
+}));
+
 // GET /api/models/:id - Get single model
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;

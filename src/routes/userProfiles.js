@@ -36,6 +36,14 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
+// GET /api/user-profiles/options - Get user profiles as options for dropdowns
+router.get('/options', asyncHandler(async (req, res) => {
+  const result = await pool.query(
+    'SELECT id as value, name as label FROM user_profiles ORDER BY name ASC'
+  );
+  res.json(result.rows);
+}));
+
 // GET /api/user-profiles/:id - Get single user profile
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;

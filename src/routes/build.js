@@ -13,7 +13,10 @@ router.get('/counts', asyncHandler(async (req, res) => {
       'SELECT COUNT(*) as count FROM characters',
       'SELECT COUNT(*) as count FROM user_profiles',
       'SELECT COUNT(*) as count FROM inference_presets',
-      'SELECT COUNT(*) as count FROM context_rules'
+      'SELECT COUNT(*) as count FROM context_rules',
+      'SELECT COUNT(*) as count FROM conversation_templates',
+      'SELECT COUNT(*) as count FROM conversations',
+      'SELECT COUNT(*) as count FROM messages'
     ];
 
     const results = await Promise.all(
@@ -26,8 +29,10 @@ router.get('/counts', asyncHandler(async (req, res) => {
       characters: parseInt(results[2].rows[0].count),
       profiles: parseInt(results[3].rows[0].count),
       presets: parseInt(results[4].rows[0].count),
-      templates: 0, // Templates might be derived, not stored
-      rules: parseInt(results[5].rows[0].count)
+      rules: parseInt(results[5].rows[0].count),
+      templates: parseInt(results[6].rows[0].count),
+      conversations: parseInt(results[7].rows[0].count),
+      messages: parseInt(results[8].rows[0].count)
     };
 
     res.json(counts);

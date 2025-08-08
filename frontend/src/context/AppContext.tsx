@@ -14,7 +14,8 @@ type AppAction =
   | { type: 'SET_COUNTS'; payload: Partial<AppState['counts']> }
   | { type: 'ADD_TO_FORGE_TIMELINE'; payload: AppState['forge']['timeline'][0] }
   | { type: 'REMOVE_FROM_FORGE_TIMELINE'; payload: string }
-  | { type: 'CLEAR_FORGE_TIMELINE' };
+  | { type: 'CLEAR_FORGE_TIMELINE' }
+  | { type: 'SET_SELECTED_CONVERSATION'; payload: AppState['selectedConversation'] };
 
 const initialState: AppState = {
   selection: {},
@@ -39,6 +40,7 @@ const initialState: AppState = {
     templates: 0,
     rules: 0,
   },
+  selectedConversation: undefined,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -94,6 +96,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
           ...state.forge,
           timeline: [],
         },
+      };
+    case 'SET_SELECTED_CONVERSATION':
+      return {
+        ...state,
+        selectedConversation: action.payload,
       };
     default:
       return state;

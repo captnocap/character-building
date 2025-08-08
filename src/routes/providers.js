@@ -12,6 +12,14 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(result.rows);
 }));
 
+// GET /api/providers/options - Get providers as options for dropdowns
+router.get('/options', asyncHandler(async (req, res) => {
+  const result = await pool.query(
+    'SELECT id as value, name as label FROM providers ORDER BY name ASC'
+  );
+  res.json(result.rows);
+}));
+
 // POST /api/providers - Create provider
 router.post('/', asyncHandler(async (req, res) => {
   const { name, type, base_url, api_key_ref, slug } = req.body;
